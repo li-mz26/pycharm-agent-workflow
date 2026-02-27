@@ -13,27 +13,35 @@ class WorkflowLoader {
     
     /**
      * 从工作流文件夹加载完整工作流
+     * 优先查找 workflow.json，如果没有则查找任意 .json 文件
      */
     fun load(workflowDir: File): LoadedWorkflow? {
         if (!workflowDir.exists() || !workflowDir.isDirectory) {
             return null
         }
-        
-        val workflowJson = File(workflowDir, "workflow.json")
+
+        // 1. 优先查找 workflow.json
+        var workflowJson = File(workflowDir, "workflow.json")
+
+        // 2. 如果没有 workflow.json，查找任意 .json 文件
         if (!workflowJson.exists()) {
-            return null
+            val jsonFiles = workflowDir.listFiles { f -> f.isFile && f.extension == "json" }
+            if (jsonFiles.isNullOrEmpty()) {
+                return null
+            }
+            workflowJson = jsonFiles.first()
         }
-        
+
         return try {
             val workflow = gson.fromJson(workflowJson.readText(), WorkflowDefinition::class.java)
             val nodesDir = File(workflowDir, "nodes")
-            
+
             // 加载节点文件内容
             val nodeFiles = mutableMapOf<String, NodeFiles>()
             workflow.nodes.forEach { node ->
                 nodeFiles[node.id] = loadNodeFiles(node, nodesDir)
             }
-            
+
             LoadedWorkflow(
                 definition = workflow,
                 baseDir = workflowDir,

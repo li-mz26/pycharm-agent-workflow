@@ -75,9 +75,11 @@ object WorkflowDetector {
     
     /**
      * 判断文件夹是否是工作流文件夹
+     * 标准：包含 workflow.json 或任意 .json 文件
      */
     fun isWorkflowFolder(dir: File): Boolean {
         if (!dir.exists() || !dir.isDirectory) return false
-        return File(dir, "workflow.json").exists()
+        // 检查是否有任意 .json 文件
+        return dir.listFiles { f -> f.isFile && f.extension == "json" }?.isNotEmpty() ?: false
     }
 }
