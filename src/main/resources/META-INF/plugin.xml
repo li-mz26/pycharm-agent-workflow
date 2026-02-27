@@ -41,7 +41,7 @@
             serviceImplementation="com.limz26.workflow.settings.AppSettings"/>
         
         <applicationConfigurable 
-            parentId="tools" 
+            parentId="application.other" 
             instance="com.limz26.workflow.settings.SettingsConfigurable"
             id="com.limz26.workflow.settings.SettingsConfigurable"
             displayName="Agent Workflow"/>

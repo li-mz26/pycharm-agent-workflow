@@ -21,7 +21,7 @@ class SettingsConfigurable : Configurable {
     private var workflowPathField: JBTextField? = null
     private var autoDetectCheckbox: JCheckBox? = null
 
-    override fun getDisplayName(): String = "Agent Workflow"
+    override fun getDisplayName(): String = "Agent Workflow (LLM 配置)"
 
     override fun createComponent(): JComponent {
         val settings = service<AppSettings>()
