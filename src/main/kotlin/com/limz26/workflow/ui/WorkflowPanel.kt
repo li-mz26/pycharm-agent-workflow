@@ -7,6 +7,7 @@ import com.intellij.ui.JBSplitter
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.UIUtil
 import com.limz26.workflow.agent.WorkflowAgent
 import com.limz26.workflow.agent.WorkflowContext
 import com.limz26.workflow.model.*
@@ -30,14 +31,15 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     private var workflowPath: String = ""
     private var workflowFiles: List<WorkflowFileInfo> = emptyList()
     
-    // 使用 JTextArea 代替 JEditorPane 避免 HTML 解析问题
+    // 使用 IDE 主题背景色
     private val chatArea = JTextArea().apply {
         isEditable = false
         lineWrap = true
         wrapStyleWord = true
         border = JBUI.Borders.empty(10)
         font = Font("Monospaced", Font.PLAIN, 13)
-        background = Color(0xF5, 0xF5, 0xF5)
+        background = UIUtil.getPanelBackground()
+        foreground = UIUtil.getLabelForeground()
     }
     
     private val inputField = JBTextArea(3, 40).apply {
@@ -45,6 +47,8 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         wrapStyleWord = true
         border = JBUI.Borders.empty(8)
         font = font.deriveFont(14f)
+        background = UIUtil.getTextFieldBackground()
+        foreground = UIUtil.getTextFieldForeground()
     }
     
     private val canvas = WorkflowCanvas()
@@ -65,11 +69,39 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     }
     
     private fun initWorkflowPath() {
-        workflowPath = WorkflowDetector.getWorkflowPath(
-            project, settings.workflowPath, settings.autoDetectWorkflows
-        )
-        workflowFiles = WorkflowDetector.scanWorkflowFiles(workflowPath)
+        // 直接使用项目根目录作为工作流路径
+        workflowPath = project.basePath ?: "."
+        
+        // 如果用户配置了自定义路径，则使用自定义路径
+        if (settings.workflowPath.isNotEmpty()) {
+            val customDir = java.io.File(settings.workflowPath)
+            if (customDir.exists() && customDir.isDirectory) {
+                workflowPath = settings.workflowPath
+            }
+        }
+        
+        // 扫描工作流文件（包括项目根目录和检测到的子目录）
+        workflowFiles = scanAllWorkflowFiles()
         updateWorkflowList()
+    }
+    
+    private fun scanAllWorkflowFiles(): List<WorkflowFileInfo> {
+        val allFiles = mutableListOf<WorkflowFileInfo>()
+        
+        // 1. 扫描项目根目录
+        allFiles.addAll(WorkflowDetector.scanWorkflowFiles(workflowPath))
+        
+        // 2. 如果启用了自动检测，也扫描检测到的子目录
+        if (settings.autoDetectWorkflows) {
+            val detectedDirs = WorkflowDetector.detectWorkflowDirs(project)
+            detectedDirs.forEach { dir ->
+                if (dir != workflowPath) { // 避免重复扫描根目录
+                    allFiles.addAll(WorkflowDetector.scanWorkflowFiles(dir))
+                }
+            }
+        }
+        
+        return allFiles.sortedBy { it.name }
     }
     
     private fun updateWorkflowList() {

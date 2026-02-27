@@ -1,5 +1,6 @@
 package com.limz26.workflow.ui
 
+import com.intellij.util.ui.UIUtil
 import com.limz26.workflow.model.*
 import java.awt.*
 import java.awt.event.MouseAdapter
@@ -29,7 +30,7 @@ class WorkflowCanvas : JPanel() {
     private val nodeSize = Dimension(140, 70)
     
     init {
-        background = Color(250, 250, 250)
+        background = UIUtil.getPanelBackground()
         preferredSize = Dimension(1200, 800)
         
         addMouseListener(object : MouseAdapter() {
@@ -210,13 +211,13 @@ class WorkflowCanvas : JPanel() {
         g.drawString(icon, x + 15 - fm.stringWidth(icon)/2, y + h/2 + 5)
         
         // 节点名称
-        g.color = Color.WHITE
+        g.color = if (UIUtil.isUnderDarcula()) Color.WHITE else Color.WHITE
         g.font = Font("Dialog", Font.BOLD, 12)
         val nameText = if (node.name.length > 10) node.name.take(10) + "..." else node.name
         g.drawString(nameText, x + 38, y + 28)
         
         // 类型标签
-        g.color = Color(255, 255, 255, 200)
+        g.color = if (UIUtil.isUnderDarcula()) Color(200, 200, 200) else Color(255, 255, 255, 200)
         g.font = Font("Dialog", Font.PLAIN, 10)
         g.drawString(node.type.uppercase(), x + 38, y + 50)
         
