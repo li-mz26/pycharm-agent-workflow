@@ -11,7 +11,8 @@ import javax.swing.JPanel
  */
 class WorkflowCanvas : JPanel() {
     
-    private var workflow: LoadedWorkflow? = null
+    private var loadedWorkflow: LoadedWorkflow? = null
+    private var workflow: Workflow? = null
     private var selectedNode: String? = null
     private var hoverNode: String? = null
     
@@ -57,7 +58,14 @@ class WorkflowCanvas : JPanel() {
     }
     
     fun setWorkflow(loadedWorkflow: LoadedWorkflow) {
-        this.workflow = loadedWorkflow
+        this.loadedWorkflow = loadedWorkflow
+        this.workflow = null
+        repaint()
+    }
+    
+    fun setWorkflow(workflow: Workflow) {
+        this.workflow = workflow
+        this.loadedWorkflow = null
         repaint()
     }
     
@@ -67,7 +75,7 @@ class WorkflowCanvas : JPanel() {
         g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
         g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB)
         
-        val wf = workflow?.definition ?: return
+        val wf = loadedWorkflow?.definition ?: workflow?.let { convertToDefinition(it) } ?: return
         
         // 绘制边
         drawEdges(g2d, wf)
@@ -273,11 +281,51 @@ class WorkflowCanvas : JPanel() {
     }
     
     private fun findNodeAt(point: Point): NodeDefinition? {
-        return workflow?.definition?.nodes?.find { node ->
+        val wf = loadedWorkflow?.definition ?: workflow?.let { convertToDefinition(it) }
+        return wf?.nodes?.find { node ->
             val x = node.position.x
             val y = node.position.y
             point.x >= x && point.x <= x + nodeSize.width &&
             point.y >= y && point.y <= y + nodeSize.height
         }
+    }
+    
+    private fun convertToDefinition(workflow: Workflow): WorkflowDefinition {
+        return WorkflowDefinition(
+            id = workflow.id,
+            name = workflow.name,
+            description = workflow.description,
+            nodes = workflow.nodes.map { node ->
+                NodeDefinition(
+                    id = node.id,
+                    type = node.type.value,
+                    name = node.name,
+                    position = PositionDefinition(node.position.x, node.position.y),
+                    config = NodeConfigDefinition(
+                        code = node.config.code,
+                        prompt = node.config.prompt,
+                        model = node.config.model,
+                        condition = node.config.condition,
+                        method = node.config.method,
+                        url = node.config.url,
+                        headers = node.config.headers,
+                        value = node.config.value,
+                        inputs = node.config.inputs,
+                        outputs = node.config.outputs
+                    )
+                )
+            },
+            edges = workflow.edges.map { edge ->
+                EdgeDefinition(
+                    id = edge.id,
+                    source = edge.source,
+                    target = edge.target,
+                    condition = edge.condition
+                )
+            },
+            variables = workflow.variables.mapValues { (_, v) ->
+                VariableDefinition(type = v.type, default = v.defaultValue)
+            }
+        )
     }
 }
