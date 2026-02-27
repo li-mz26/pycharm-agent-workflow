@@ -1,6 +1,7 @@
 {
+  "id": "example_workflow_001",
   "name": "示例数据处理工作流",
-  "description": "读取数据、清洗、分析的工作流",
+  "description": "读取数据、清洗、分析的工作流（代码分离版本）",
   "nodes": [
     {
       "id": "start_001",
@@ -17,7 +18,7 @@
       "name": "数据清洗",
       "position": {"x": 300, "y": 100},
       "config": {
-        "code": "def main(inputs):\n    data = inputs.get('raw_data', [])\n    cleaned = [x for x in data if x is not None]\n    return {'cleaned_data': cleaned}",
+        "codeFile": "nodes/code_001.py",
         "inputs": {"raw_data": "start_001.raw_data"},
         "outputs": {"cleaned_data": "list"}
       }
@@ -37,7 +38,7 @@
       "name": "数据分析",
       "position": {"x": 700, "y": 50},
       "config": {
-        "prompt": "分析以下数据并给出统计摘要:\n\n{{cleaned_data}}",
+        "promptFile": "nodes/agent_001_prompt.md",
         "model": "gpt-4",
         "inputs": {"cleaned_data": "code_001.cleaned_data"},
         "outputs": {"summary": "string"}
@@ -49,7 +50,7 @@
       "name": "空数据处理",
       "position": {"x": 700, "y": 150},
       "config": {
-        "code": "def main(inputs):\n    return {'message': '没有数据需要处理'}",
+        "codeFile": "nodes/code_002.py",
         "outputs": {"message": "string"}
       }
     },
