@@ -1,28 +1,74 @@
 package com.limz26.workflow.model
 
+import com.google.gson.GsonBuilder
 import java.io.File
 
 /**
- * 工作流导出器 - 生成 JSON + 代码文件 + 提示词文件
+ * 工作流导出器 - 生成 JSON + 代码文件 + 提示词文件到项目 workflows 目录
  */
-class WorkflowExporter(private val basePath: String) {
-
+class WorkflowExporter(private val projectBasePath: String) {
+    
+    private val gson = GsonBuilder().setPrettyPrinting().create()
+    
     /**
-     * 导出完整工作流到目录
+     * 导出完整工作流到项目 workflows 目录
+     * 一个工作流一个文件夹
      */
     fun export(workflow: Workflow): String {
-        val workflowDir = File(basePath, workflow.name.replace(" ", "_"))
+        // 工作流目录: project/workflows/workflow_name/
+        val workflowsDir = File(projectBasePath, "workflows")
+        workflowsDir.mkdirs()
+        
+        val workflowDirName = workflow.name.replace(Regex("[^a-zA-Z0-9_\u4e00-\u9fa5]"), "_")
+        val workflowDir = File(workflowsDir, workflowDirName)
         workflowDir.mkdirs()
         
         val nodesDir = File(workflowDir, "nodes")
         nodesDir.mkdirs()
         
         // 1. 导出 workflow.json
-        File(workflowDir, "workflow.json").writeText(workflow.toJson())
+        val workflowDef = WorkflowDefinition(
+            id = workflow.id,
+            name = workflow.name,
+            description = workflow.description,
+            nodes = workflow.nodes.map { node ->
+                NodeDefinition(
+                    id = node.id,
+                    type = node.type.value,
+                    name = node.name,
+                    position = PositionDefinition(node.position.x, node.position.y),
+                    config = NodeConfigDefinition(
+                        code = node.config.code,
+                        prompt = node.config.prompt,
+                        model = node.config.model,
+                        condition = node.config.condition,
+                        method = node.config.method,
+                        url = node.config.url,
+                        headers = node.config.headers,
+                        value = node.config.value,
+                        inputs = node.config.inputs,
+                        outputs = node.config.outputs
+                    )
+                )
+            },
+            edges = workflow.edges.map { edge ->
+                EdgeDefinition(
+                    id = edge.id,
+                    source = edge.source,
+                    target = edge.target,
+                    condition = edge.condition
+                )
+            },
+            variables = workflow.variables.mapValues { (_, v) ->
+                VariableDefinition(type = v.type, default = v.defaultValue)
+            }
+        )
+        
+        File(workflowDir, "workflow.json").writeText(gson.toJson(workflowDef))
         
         // 2. 导出各个节点的代码/提示词文件
         workflow.nodes.forEach { node ->
-            exportNode(node, nodesDir)
+            exportNodeFiles(node, nodesDir)
         }
         
         // 3. 导出 README
@@ -31,68 +77,124 @@ class WorkflowExporter(private val basePath: String) {
         return workflowDir.absolutePath
     }
     
-    private fun exportNode(node: WorkflowNode, nodesDir: File) {
+    private fun exportNodeFiles(node: WorkflowNode, nodesDir: File) {
         when (node.type) {
             NodeType.CODE -> {
                 // 导出 Python 文件
-                val code = node.config.code ?: "# TODO: Implement ${node.name}\n\ndef main(inputs):\n    return {}"
+                val code = node.config.code ?: generateDefaultCode(node.name)
                 File(nodesDir, "${node.id}.py").writeText(code)
             }
             NodeType.AGENT -> {
                 // 导出提示词文件
-                val prompt = node.config.prompt ?: "# TODO: Define prompt for ${node.name}"
+                val prompt = node.config.prompt ?: "# TODO: Define prompt for ${node.name}\n\nDescribe the agent's task here..."
                 File(nodesDir, "${node.id}_prompt.md").writeText(prompt)
                 
                 // 导出配置
-                val config = """
-                    {
-                      "model": "${node.config.model ?: "gpt-4"}",
-                      "temperature": 0.7,
-                      "inputs": ${node.config.inputs.toJson()},
-                      "outputs": ${node.config.outputs.toJson()}
-                    }
-                """.trimIndent()
-                File(nodesDir, "${node.id}_config.json").writeText(config)
+                val config = AgentConfig(
+                    model = node.config.model ?: "gpt-4",
+                    temperature = 0.7,
+                    inputs = node.config.inputs,
+                    outputs = node.config.outputs
+                )
+                File(nodesDir, "${node.id}_config.json").writeText(gson.toJson(config))
             }
             else -> {
-                // 其他节点类型，导出配置即可
-                if (node.config.code != null || node.config.prompt != null) {
-                    File(nodesDir, "${node.id}_config.json").writeText(node.config.toJson())
+                // 其他节点类型，如果有特殊配置也导出
+                if (node.config.code != null || node.config.prompt != null || 
+                    node.config.condition != null) {
+                    File(nodesDir, "${node.id}_config.json").writeText(gson.toJson(node.config))
                 }
             }
         }
     }
     
-    private fun generateReadme(workflow: Workflow): String {
-        return """
-            # ${workflow.name}
-            
-            ${workflow.description}
-            
-            ## 节点列表
-            
-            | ID | 类型 | 名称 |
-            |----|------|------|
-            ${workflow.nodes.joinToString("\n") { "| ${it.id} | ${it.type.value} | ${it.name} |" }}
-            
-            ## 变量
-            
-            ${if (workflow.variables.isEmpty()) "无" else workflow.variables.entries.joinToString("\n") { "- **${it.key}**: ${it.value.type}" }}
-            
-            ## 文件结构
-            
-            ```
-            ${workflow.name.replace(" ", "_")}/
-            ├── workflow.json
-            ├── nodes/
-            ${workflow.nodes.filter { it.type == NodeType.CODE || it.type == NodeType.AGENT }.joinToString("\n") { "│   ├── ${it.id}${if (it.type == NodeType.CODE) ".py" else "_prompt.md"}" }}
-            └── README.md
-            ```
-        """.trimIndent()
+    private fun generateDefaultCode(nodeName: String): String {
+        return """# $nodeName
+# Generated by Agent Workflow Plugin
+
+def main(inputs: dict) -> dict:
+    \"\"\"
+    Process inputs and return outputs.
+    
+    Args:
+        inputs: Dictionary containing input values
+        
+    Returns:
+        Dictionary containing output values
+    \"\"\"
+    # TODO: Implement your logic here
+    result = {}
+    
+    # Example: process each input
+    for key, value in inputs.items():
+        # Process value...
+        result[key] = value
+    
+    return result
+
+
+if __name__ == "__main__":
+    # Test the function
+    test_inputs = {}
+    print(main(test_inputs))
+""".trimIndent()
     }
     
-    private fun Map<String, String>.toJson(): String {
-        if (isEmpty()) return "{}"
-        return "{" + entries.joinToString(", ") { "\"${it.key}\": \"${it.value}\"" } + "}"
+    private fun generateReadme(workflow: Workflow): String {
+        val nodeTable = workflow.nodes.joinToString("\n") { node ->
+            val fileInfo = when (node.type) {
+                NodeType.CODE -> "→ `${node.id}.py`"
+                NodeType.AGENT -> "→ `${node.id}_prompt.md`, `${node.id}_config.json`"
+                else -> ""
+            }
+            "| ${node.id} | ${node.type.value} | ${node.name} | $fileInfo |"
+        }
+        
+        return """# ${workflow.name}
+
+${workflow.description}
+
+## 节点列表
+
+| ID | 类型 | 名称 | 文件 |
+|----|------|------|------|
+$nodeTable
+
+## 变量
+
+${if (workflow.variables.isEmpty()) "_无_" else workflow.variables.entries.joinToString("\n") { "- **${it.key}** (`${it.value.type}`)" }}
+
+## 文件结构
+
+```
+${workflow.name.replace(Regex("[^a-zA-Z0-9_\u4e00-\u9fa5]"), "_")}/
+├── workflow.json
+├── nodes/
+${workflow.nodes.filter { it.type == NodeType.CODE || it.type == NodeType.AGENT }.joinToString("\n") { 
+    when (it.type) {
+        NodeType.CODE -> "│   ├── ${it.id}.py"
+        NodeType.AGENT -> "│   ├── ${it.id}_prompt.md\n│   ├── ${it.id}_config.json"
+        else -> ""
     }
+}}
+└── README.md
+```
+
+## 使用方式
+
+1. 在代码中加载 `workflow.json` 解析 DAG 结构
+2. 根据节点类型执行对应逻辑：
+   - `code` 节点：执行 `nodes/{node_id}.py`
+   - `agent` 节点：读取 `nodes/{node_id}_prompt.md` 和 `_config.json`，调用 LLM
+   - `condition` 节点：评估条件表达式决定分支
+3. 按照 `edges` 定义的顺序执行
+""".trimIndent()
+    }
+    
+    private data class AgentConfig(
+        val model: String,
+        val temperature: Double,
+        val inputs: Map<String, String>,
+        val outputs: Map<String, String>
+    )
 }

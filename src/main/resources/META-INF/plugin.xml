@@ -25,10 +25,17 @@
     <depends>com.intellij.modules.python</depends>
 
     <extensions defaultExtensionNs="com.intellij">
+        <!-- 生成工作流工具窗口 -->
         <toolWindow id="Agent Workflow" 
                     secondary="true" 
                     anchor="right" 
                     factoryClass="com.limz26.workflow.ui.WorkflowToolWindowFactory"/>
+        
+        <!-- 预览工作流工具窗口 -->
+        <toolWindow id="Workflow Preview" 
+                    secondary="true" 
+                    anchor="right" 
+                    factoryClass="com.limz26.workflow.ui.WorkflowPreviewToolWindowFactory"/>
         
         <applicationService 
             serviceImplementation="com.limz26.workflow.settings.AppSettings"/>
@@ -41,6 +48,7 @@
     </extensions>
 
     <actions>
+        <!-- 打开生成面板 -->
         <action id="com.limz26.workflow.OpenWorkflowPanel"
                 class="com.limz26.workflow.actions.OpenWorkflowPanelAction"
                 text="Open Agent Workflow"
@@ -49,11 +57,28 @@
             <keyboard-shortcut keymap="$default" first-keystroke="ctrl shift W"/>
         </action>
         
+        <!-- 从选中代码生成 -->
         <action id="com.limz26.workflow.GenerateFromSelection"
                 class="com.limz26.workflow.actions.GenerateWorkflowFromSelectionAction"
                 text="Generate Workflow from Selection"
                 description="Generate workflow from selected code">
             <add-to-group group-id="EditorPopupMenu" anchor="after" relative-to-action="CopyPasteGroup"/>
+        </action>
+        
+        <!-- 预览工作流（右键文件夹）-->
+        <action id="com.limz26.workflow.PreviewWorkflow"
+                class="com.limz26.workflow.actions.PreviewWorkflowAction"
+                text="Preview Workflow"
+                description="Preview workflow from folder">
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="after" relative-to-action="CutCopyPasteGroup"/>
+        </action>
+        
+        <!-- 刷新工作流列表 -->
+        <action id="com.limz26.workflow.RefreshWorkflows"
+                class="com.limz26.workflow.actions.RefreshWorkflowsAction"
+                text="Refresh Workflows"
+                description="Refresh workflow list">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
         </action>
     </actions>
 </idea-plugin>
