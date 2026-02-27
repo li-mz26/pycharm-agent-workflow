@@ -1,0 +1,52 @@
+<idea-plugin>
+    <id>com.limz26.pycharm-agent-workflow</id>
+    <name>Agent Workflow</name>
+    <version>0.1.0</version>
+    <vendor>limz26</vendor>
+
+    <description><![CDATA[
+        Use LLM agents to generate workflows in PyCharm.
+        <br/>
+        Features:
+        <ul>
+            <li>Natural language to workflow</li>
+            <li>Multi-provider LLM support</li>
+            <li>Visual workflow editor</li>
+        </ul>
+    ]]></description>
+
+    <change-notes><![CDATA[
+        Initial release.
+    ]]></change-notes>
+
+    <idea-version since-build="232"/>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.python</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow id="Agent Workflow" 
+                    secondary="true" 
+                    anchor="right" 
+                    factoryClass="com.limz26.workflow.ui.WorkflowToolWindowFactory"/>
+        
+        <applicationService 
+            serviceImplementation="com.limz26.workflow.settings.AppSettings"/>
+        
+        <applicationConfigurable 
+            parentId="tools" 
+            instance="com.limz26.workflow.settings.SettingsConfigurable"
+            id="com.limz26.workflow.settings.SettingsConfigurable"
+            displayName="Agent Workflow"/>
+    </extensions>
+
+    <actions>
+        <action id="com.limz26.workflow.GenerateWorkflowAction"
+                class="com.limz26.workflow.actions.GenerateWorkflowAction"
+                text="Generate Workflow"
+                description="Generate workflow using LLM agent">
+            <add-to-group group-id="EditorPopupMenu" anchor="after" relative-to-action="CopyPasteGroup"/>
+            <keyboard-shortcut keymap="$default" first-keystroke="ctrl shift W"/>
+        </action>
+    </actions>
+</idea-plugin>
