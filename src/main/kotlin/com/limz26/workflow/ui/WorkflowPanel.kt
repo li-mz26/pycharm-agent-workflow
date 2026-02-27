@@ -1,5 +1,6 @@
 package com.limz26.workflow.ui
 
+import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.SimpleToolWindowPanel
 import com.intellij.ui.JBSplitter
@@ -9,6 +10,9 @@ import com.intellij.util.ui.JBUI
 import com.limz26.workflow.agent.WorkflowAgent
 import com.limz26.workflow.agent.WorkflowContext
 import com.limz26.workflow.model.*
+import com.limz26.workflow.settings.AppSettings
+import com.limz26.workflow.util.WorkflowDetector
+import com.limz26.workflow.util.WorkflowFileInfo
 import java.awt.BorderLayout
 import java.awt.Dimension
 import javax.swing.*
@@ -19,7 +23,10 @@ import javax.swing.*
 class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false, true) {
     
     private val agent = WorkflowAgent()
+    private val settings = service<AppSettings>()
     private var currentWorkflow: Workflow? = null
+    private var workflowPath: String = ""
+    private var workflowFiles: List<WorkflowFileInfo> = emptyList()
     
     private val chatArea = JTextArea().apply {
         isEditable = false
@@ -35,23 +42,128 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     }
     
     private val canvas = WorkflowCanvas()
+    private val workflowListModel = DefaultListModel<String>()
+    private val workflowList = JList(workflowListModel)
     
     init {
-        // 左侧面板：对话
-        val chatPanel = createChatPanel()
+        // 初始化工作流路径
+        initWorkflowPath()
+        
+        // 左侧面板：对话 + 工作流列表
+        val leftPanel = createLeftPanel()
         
         // 右侧面板：可视化画布
         val canvasPanel = createCanvasPanel()
         
         // 分割面板
-        val splitter = JBSplitter(false, 0.4f)
-        splitter.firstComponent = chatPanel
+        val splitter = JBSplitter(false, 0.35f)
+        splitter.firstComponent = leftPanel
         splitter.secondComponent = canvasPanel
         
         setContent(splitter)
         
-        // 欢迎消息
-        appendMessage("Agent", "你好！我是工作流助手。请描述你想要创建的工作流，我会帮你生成 DAG 结构。\n\n例如：\n- \"创建一个数据清洗工作流，先读取 CSV，然后过滤空值，最后保存\"\n- \"帮我做一个带条件分支的审批流程\"")
+        // 显示欢迎消息
+        showWelcomeMessage()
+    }
+    
+    private fun initWorkflowPath() {
+        workflowPath = WorkflowDetector.getWorkflowPath(
+            project,
+            settings.workflowPath,
+            settings.autoDetectWorkflows
+        )
+        
+        // 扫描工作流文件
+        workflowFiles = WorkflowDetector.scanWorkflowFiles(workflowPath)
+        
+        // 更新工作流列表
+        updateWorkflowList()
+    }
+    
+    private fun updateWorkflowList() {
+        workflowListModel.clear()
+        workflowFiles.forEach { file ->
+            workflowListModel.addElement("📄 ${file.name}.${file.extension}")
+        }
+        
+        if (workflowFiles.isEmpty()) {
+            workflowListModel.addElement("(无工作流文件)")
+        }
+    }
+    
+    private fun showWelcomeMessage() {
+        val pathInfo = if (workflowPath == project.basePath) {
+            "项目根目录"
+        } else {
+            workflowPath
+        }
+        
+        appendMessage("Agent", """
+            你好！我是工作流助手。
+            
+            📁 当前工作流路径: $pathInfo
+            📊 发现 ${workflowFiles.size} 个工作流文件
+            
+            请描述你想要创建的工作流，我会帮你生成 DAG 结构。
+            
+            例如：
+            • "创建一个数据清洗工作流，先读取 CSV，然后过滤空值，最后保存"
+            • "帮我做一个带条件分支的审批流程"
+            • "生成一个定时备份数据库的任务"
+        """.trimIndent())
+    }
+    
+    private fun createLeftPanel(): JPanel {
+        val panel = JPanel(BorderLayout())
+        
+        // 工作流列表面板
+        val listPanel = JPanel(BorderLayout())
+        listPanel.border = BorderFactory.createTitledBorder("工作流文件 (${workflowFiles.size})")
+        
+        workflowList.selectionMode = ListSelectionModel.SINGLE_SELECTION
+        workflowList.addListSelectionListener { event ->
+            if (!event.valueIsAdjusting) {
+                val selectedIndex = workflowList.selectedIndex
+                if (selectedIndex >= 0 && selectedIndex < workflowFiles.size) {
+                    loadWorkflowFile(workflowFiles[selectedIndex])
+                }
+            }
+        }
+        
+        val listScrollPane = JBScrollPane(workflowList)
+        listScrollPane.preferredSize = Dimension(200, 150)
+        listPanel.add(listScrollPane, BorderLayout.CENTER)
+        
+        // 刷新按钮
+        val refreshButton = JButton("🔄 刷新")
+        refreshButton.addActionListener {
+            initWorkflowPath()
+            listPanel.border = BorderFactory.createTitledBorder("工作流文件 (${workflowFiles.size})")
+        }
+        listPanel.add(refreshButton, BorderLayout.SOUTH)
+        
+        // 对话面板
+        val chatPanel = createChatPanel()
+        
+        // 分割左侧面板
+        val splitter = JBSplitter(true, 0.3f)
+        splitter.firstComponent = listPanel
+        splitter.secondComponent = chatPanel
+        
+        panel.add(splitter, BorderLayout.CENTER)
+        return panel
+    }
+    
+    private fun loadWorkflowFile(fileInfo: WorkflowFileInfo) {
+        appendMessage("System", "正在加载工作流文件: ${fileInfo.name}")
+        
+        try {
+            val content = java.io.File(fileInfo.path).readText()
+            // TODO: 解析工作流文件内容
+            appendMessage("Agent", "已加载工作流: ${fileInfo.name}.${fileInfo.extension}")
+        } catch (e: Exception) {
+            appendMessage("Error", "加载失败: ${e.message}")
+        }
     }
     
     private fun createChatPanel(): JPanel {
@@ -141,9 +253,12 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
             return
         }
         
-        val exporter = WorkflowExporter(project.basePath ?: ".")
+        val exporter = WorkflowExporter(workflowPath)
         val path = exporter.export(workflow)
         appendMessage("Agent", "✅ 工作流已导出到:\n$path")
+        
+        // 刷新工作流列表
+        initWorkflowPath()
     }
     
     private fun appendMessage(sender: String, message: String) {

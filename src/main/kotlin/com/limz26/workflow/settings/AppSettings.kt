@@ -15,7 +15,9 @@ class AppSettings : PersistentStateComponent<AppSettings.State> {
         var apiKey: String = "",
         var apiEndpoint: String = "https://api.openai.com/v1",
         var model: String = "gpt-4",
-        var temperature: Double = 0.7
+        var temperature: Double = 0.7,
+        var workflowPath: String = "",  // 工作流文件夹路径，空则使用项目根目录
+        var autoDetectWorkflows: Boolean = true  // 自动检测工作流文件夹
     )
 
     private var state = State()
@@ -41,4 +43,25 @@ class AppSettings : PersistentStateComponent<AppSettings.State> {
     var temperature: Double
         get() = state.temperature
         set(value) { state.temperature = value }
+        
+    var workflowPath: String
+        get() = state.workflowPath
+        set(value) { state.workflowPath = value }
+        
+    var autoDetectWorkflows: Boolean
+        get() = state.autoDetectWorkflows
+        set(value) { state.autoDetectWorkflows = value }
+    
+    /**
+     * 获取实际的工作流路径
+     * @param projectBasePath 项目根目录
+     * @return 工作流文件夹路径
+     */
+    fun getWorkflowPath(projectBasePath: String): String {
+        return if (workflowPath.isNotEmpty()) {
+            workflowPath
+        } else {
+            projectBasePath
+        }
+    }
 }
