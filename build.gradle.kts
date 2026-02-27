@@ -16,8 +16,8 @@ dependencies {
 }
 
 intellij {
-    version.set("2023.2.5")
-    type.set("IC")
+    version.set("2024.3")
+    type.set("PC")
     
     plugins.set(listOf())
 }
@@ -32,8 +32,8 @@ tasks {
     }
 
     patchPluginXml {
-        sinceBuild.set("232")
-        untilBuild.set("241.*")
+        sinceBuild.set("243")
+        untilBuild.set("253.*")
     }
 
     signPlugin {
