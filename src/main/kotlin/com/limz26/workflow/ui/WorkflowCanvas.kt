@@ -179,7 +179,7 @@ class WorkflowCanvas : JPanel() {
         }
         
         // 节点主体渐变
-        val gradient = Paint(
+        val gradient = GradientPaint(
             x.toFloat(), y.toFloat(), color.brighter(),
             x.toFloat(), (y + h).toFloat(), color
         )
@@ -275,7 +275,7 @@ class WorkflowCanvas : JPanel() {
             "agent" -> "🤖"
             "condition" -> "?"
             "http" -> "🌐"
-            "variable" -> "$")
+            "variable" -> "$"  
             else -> "●"
         }
     }

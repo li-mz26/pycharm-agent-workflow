@@ -7,6 +7,7 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBUI
 import com.limz26.workflow.agent.WorkflowAgent
+import com.limz26.workflow.agent.WorkflowContext
 import com.limz26.workflow.model.*
 import java.awt.BorderLayout
 import java.awt.Dimension
