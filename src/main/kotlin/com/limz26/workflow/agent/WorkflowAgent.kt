@@ -1,8 +1,10 @@
 package com.limz26.workflow.agent
 
 import com.intellij.openapi.components.service
+import com.limz26.workflow.llm.LLMClient
 import com.limz26.workflow.model.*
 import com.limz26.workflow.settings.AppSettings
+import kotlinx.serialization.json.*
 
 /**
  * Agent 对话处理器 - 将自然语言转换为工作流
@@ -10,14 +12,24 @@ import com.limz26.workflow.settings.AppSettings
 class WorkflowAgent {
     
     private val settings = service<AppSettings>()
+    private val llmClient = LLMClient()
     
     /**
      * 解析用户输入，生成工作流
      */
     fun generateWorkflow(userInput: String, context: WorkflowContext? = null): Workflow {
-        // TODO: 调用 LLM API 解析用户意图
-        // 目前返回示例工作流
-        return createExampleWorkflow(userInput)
+        // 检查 API 配置
+        if (settings.apiKey.isBlank()) {
+            return createErrorWorkflow("请先在 Settings → Other Settings → Agent Workflow (LLM 配置) 中配置 API Key")
+        }
+        
+        return try {
+            // 调用 LLM 生成工作流
+            val dsl = llmClient.generateWorkflowDSL(userInput)
+            parseWorkflowFromJson(dsl, userInput)
+        } catch (e: Exception) {
+            createErrorWorkflow("生成工作流失败: ${e.message}")
+        }
     }
     
     /**
@@ -82,6 +94,83 @@ class WorkflowAgent {
         return false
     }
     
+    private fun createErrorWorkflow(errorMessage: String): Workflow {
+        return Workflow(
+            name = "错误",
+            description = errorMessage,
+            nodes = listOf(
+                WorkflowNode(
+                    type = NodeType.START,
+                    name = "开始",
+                    position = Position(100, 100)
+                ),
+                WorkflowNode(
+                    type = NodeType.CODE,
+                    name = "错误信息",
+                    position = Position(300, 100),
+                    config = NodeConfig(
+                        code = "# $errorMessage"
+                    )
+                ),
+                WorkflowNode(
+                    type = NodeType.END,
+                    name = "结束",
+                    position = Position(500, 100)
+                )
+            ),
+            edges = listOf(
+                WorkflowEdge(source = "node_1", target = "node_2"),
+                WorkflowEdge(source = "node_2", target = "node_3")
+            ),
+            variables = emptyMap()
+        )
+    }
+
+    private fun parseWorkflowFromJson(json: String, userInput: String): Workflow {
+        return try {
+            kotlinx.serialization.json.Json.parseToJsonElement(json).jsonObject.let { obj ->
+                val name = obj["name"]?.jsonPrimitive?.content ?: "未命名工作流"
+                val description = obj["description"]?.jsonPrimitive?.content ?: userInput
+
+                val nodes = obj["nodes"]?.jsonArray?.mapIndexed { index, nodeElement ->
+                    val nodeObj = nodeElement.jsonObject
+                    WorkflowNode(
+                        id = nodeObj["id"]?.jsonPrimitive?.content ?: "node_${index + 1}",
+                        type = NodeType.valueOf(nodeObj["type"]?.jsonPrimitive?.content?.uppercase() ?: "CODE"),
+                        name = nodeObj["name"]?.jsonPrimitive?.content ?: "节点${index + 1}",
+                        position = Position(
+                            x = nodeObj["x"]?.jsonPrimitive?.intOrNull ?: (100 + index * 200),
+                            y = nodeObj["y"]?.jsonPrimitive?.intOrNull ?: 100
+                        ),
+                        config = NodeConfig(
+                            code = nodeObj["code"]?.jsonPrimitive?.content,
+                            prompt = nodeObj["prompt"]?.jsonPrimitive?.content,
+                            model = nodeObj["model"]?.jsonPrimitive?.content
+                        )
+                    )
+                } ?: emptyList()
+
+                val edges = obj["edges"]?.jsonArray?.map { edgeElement ->
+                    val edgeObj = edgeElement.jsonObject
+                    WorkflowEdge(
+                        source = edgeObj["source"]?.jsonPrimitive?.content ?: "",
+                        target = edgeObj["target"]?.jsonPrimitive?.content ?: ""
+                    )
+                } ?: emptyList()
+
+                Workflow(
+                    name = name,
+                    description = description,
+                    nodes = nodes,
+                    edges = edges,
+                    variables = emptyMap()
+                )
+            }
+        } catch (e: Exception) {
+            createExampleWorkflow(userInput)
+        }
+    }
+
     private fun createExampleWorkflow(description: String): Workflow {
         // 示例：创建一个简单的数据处理工作流
         val startNode = WorkflowNode(
