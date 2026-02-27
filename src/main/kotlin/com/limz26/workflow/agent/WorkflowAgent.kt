@@ -10,10 +10,10 @@ import kotlinx.serialization.json.*
  * Agent 对话处理器 - 将自然语言转换为工作流
  */
 class WorkflowAgent {
-    
-    private val settings = service<AppSettings>()
-    private val llmClient = LLMClient()
-    
+
+    private val settings by lazy { service<AppSettings>() }
+    private val llmClient by lazy { LLMClient() }
+
     /**
      * 解析用户输入，生成工作流
      */
@@ -22,7 +22,7 @@ class WorkflowAgent {
         if (settings.apiKey.isBlank()) {
             return createErrorWorkflow("请先在 Settings → Other Settings → Agent Workflow (LLM 配置) 中配置 API Key")
         }
-        
+
         return try {
             // 调用 LLM 生成工作流
             val dsl = llmClient.generateWorkflowDSL(userInput)
@@ -31,7 +31,7 @@ class WorkflowAgent {
             createErrorWorkflow("生成工作流失败: ${e.message}")
         }
     }
-    
+
     /**
      * 继续对话，修改工作流
      */
@@ -39,41 +39,41 @@ class WorkflowAgent {
         // TODO: 调用 LLM API 理解修改意图
         return workflow
     }
-    
+
     /**
      * 验证工作流是否有效（无环、有开始结束等）
      */
     fun validateWorkflow(workflow: Workflow): ValidationResult {
         val errors = mutableListOf<String>()
-        
+
         // 检查是否有开始节点
         val hasStart = workflow.nodes.any { it.type == NodeType.START }
         if (!hasStart) errors.add("缺少开始节点")
-        
+
         // 检查是否有结束节点
         val hasEnd = workflow.nodes.any { it.type == NodeType.END }
         if (!hasEnd) errors.add("缺少结束节点")
-        
+
         // 检查是否有环
         if (hasCycle(workflow)) errors.add("工作流存在循环")
-        
+
         // 检查孤立节点
         val connectedNodes = workflow.edges.flatMap { listOf(it.source, it.target) }.toSet()
         val isolatedNodes = workflow.nodes.filter { it.id !in connectedNodes && it.type !in listOf(NodeType.START, NodeType.END) }
         if (isolatedNodes.isNotEmpty()) errors.add("存在孤立节点: ${isolatedNodes.map { it.name }}")
-        
+
         return ValidationResult(errors.isEmpty(), errors)
     }
-    
+
     private fun hasCycle(workflow: Workflow): Boolean {
         val adj = workflow.edges.groupBy { it.source }.mapValues { it.value.map { e -> e.target } }
         val visited = mutableSetOf<String>()
         val recStack = mutableSetOf<String>()
-        
+
         fun dfs(node: String): Boolean {
             visited.add(node)
             recStack.add(node)
-            
+
             for (neighbor in adj[node] ?: emptyList()) {
                 if (!visited.contains(neighbor)) {
                     if (dfs(neighbor)) return true
@@ -81,11 +81,11 @@ class WorkflowAgent {
                     return true
                 }
             }
-            
+
             recStack.remove(node)
             return false
         }
-        
+
         for (node in workflow.nodes.map { it.id }) {
             if (!visited.contains(node)) {
                 if (dfs(node)) return true
@@ -93,7 +93,7 @@ class WorkflowAgent {
         }
         return false
     }
-    
+
     private fun createErrorWorkflow(errorMessage: String): Workflow {
         return Workflow(
             name = "错误",
@@ -178,7 +178,7 @@ class WorkflowAgent {
             name = "开始",
             position = Position(100, 100)
         )
-        
+
         val codeNode = WorkflowNode(
             type = NodeType.CODE,
             name = "数据预处理",
@@ -194,7 +194,7 @@ def main(inputs):
                 outputs = mapOf("processed_data" to "list")
             )
         )
-        
+
         val agentNode = WorkflowNode(
             type = NodeType.AGENT,
             name = "数据分析",
@@ -214,13 +214,13 @@ def main(inputs):
                 outputs = mapOf("analysis" to "string", "insights" to "list")
             )
         )
-        
+
         val endNode = WorkflowNode(
             type = NodeType.END,
             name = "结束",
             position = Position(700, 100)
         )
-        
+
         return Workflow(
             name = "示例工作流",
             description = description,
