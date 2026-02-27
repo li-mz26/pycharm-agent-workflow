@@ -21,7 +21,7 @@ class WorkflowPreviewPanel(private val project: Project) : SimpleToolWindowPanel
     private val loader = WorkflowLoader()
     private val workflowListModel = DefaultListModel<LoadedWorkflow>()
     private val workflowList = JBList(workflowListModel)
-    private val canvas = WorkflowCanvas()
+    private val canvas = WorkflowCanvas(project)
     
     init {
         workflowList.cellRenderer = WorkflowListCellRenderer()

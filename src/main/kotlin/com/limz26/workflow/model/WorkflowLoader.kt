@@ -39,7 +39,7 @@ class WorkflowLoader {
             // 加载节点文件内容
             val nodeFiles = mutableMapOf<String, NodeFiles>()
             workflow.nodes.forEach { node ->
-                nodeFiles[node.id] = loadNodeFiles(node, nodesDir)
+                nodeFiles[node.id] = loadNodeFiles(node, nodesDir, workflowDir)
             }
 
             LoadedWorkflow(
@@ -65,26 +65,50 @@ class WorkflowLoader {
             ?: emptyList()
     }
     
-    private fun loadNodeFiles(node: NodeDefinition, nodesDir: File): NodeFiles {
+    private fun loadNodeFiles(node: NodeDefinition, nodesDir: File, workflowDir: File): NodeFiles {
         return when (node.type) {
             "code" -> {
-                val codeFile = File(nodesDir, "${node.id}.py")
+                // 优先从外部文件加载代码
+                val codeFromFile = node.config.codeFile?.let { codeFilePath ->
+                    val codeFile = File(workflowDir, codeFilePath)
+                    if (codeFile.exists()) codeFile.readText() else null
+                }
+                
+                // 如果没有外部文件，尝试从 nodes 目录加载
+                val codeFromNodesDir = if (codeFromFile == null) {
+                    val codeFile = File(nodesDir, "${node.id}.py")
+                    if (codeFile.exists()) codeFile.readText() else null
+                } else null
+                
+                // 最后使用内联代码
+                val finalCode = codeFromFile ?: codeFromNodesDir ?: node.config.code
+                
                 NodeFiles(
-                    codeContent = if (codeFile.exists()) codeFile.readText() else null,
+                    codeContent = finalCode,
+                    codeFilePath = node.config.codeFile ?: "nodes/${node.id}.py",
                     promptContent = null,
                     configContent = null
                 )
             }
             "agent" -> {
-                val promptFile = File(nodesDir, "${node.id}_prompt.md")
+                // 优先从外部文件加载提示词
+                val promptFromFile = node.config.promptFile?.let { promptFilePath ->
+                    val promptFile = File(workflowDir, promptFilePath)
+                    if (promptFile.exists()) promptFile.readText() else null
+                }
+                
+                val finalPrompt = promptFromFile ?: node.config.prompt
+                
                 val configFile = File(nodesDir, "${node.id}_config.json")
                 NodeFiles(
                     codeContent = null,
-                    promptContent = if (promptFile.exists()) promptFile.readText() else null,
+                    codeFilePath = null,
+                    promptContent = finalPrompt,
+                    promptFilePath = node.config.promptFile ?: "nodes/${node.id}_prompt.md",
                     configContent = if (configFile.exists()) configFile.readText() else null
                 )
             }
-            else -> NodeFiles(null, null, null)
+            else -> NodeFiles(null, null, null, null, null)
         }
     }
 }
@@ -106,7 +130,9 @@ data class LoadedWorkflow(
  */
 data class NodeFiles(
     val codeContent: String?,
+    val codeFilePath: String? = null,      // 代码文件路径
     val promptContent: String?,
+    val promptFilePath: String? = null,    // 提示词文件路径
     val configContent: String?
 )
 
@@ -136,8 +162,10 @@ data class PositionDefinition(
 )
 
 data class NodeConfigDefinition(
-    val code: String? = null,
+    val code: String? = null,                    // 内联代码（向后兼容）
+    val codeFile: String? = null,                // 外部代码文件路径，如 "nodes/process_data.py"
     val prompt: String? = null,
+    val promptFile: String? = null,              // 外部提示词文件路径
     val model: String? = null,
     val condition: String? = null,
     val method: String? = null,

@@ -26,20 +26,46 @@ class WorkflowExporter(private val projectBasePath: String) {
         val nodesDir = File(workflowDir, "nodes")
         nodesDir.mkdirs()
         
-        // 1. 导出 workflow.json
+        // 1. 导出各个节点的代码/提示词文件（先导出，以便在 JSON 中引用）
+        workflow.nodes.forEach { node ->
+            exportNodeFiles(node, nodesDir)
+        }
+        
+        // 2. 导出 workflow.json（代码文件路径引用外部文件）
         val workflowDef = WorkflowDefinition(
             id = workflow.id,
             name = workflow.name,
             description = workflow.description,
             nodes = workflow.nodes.map { node ->
+                // 根据节点类型确定文件引用
+                val (codeRef, codeFileRef) = when (node.type) {
+                    NodeType.CODE -> {
+                        // 代码在外部文件，JSON 中只保留文件路径引用
+                        val fileRef = "nodes/${node.id}.py"
+                        Pair(null, fileRef)
+                    }
+                    else -> Pair(node.config.code, null)
+                }
+                
+                val (promptRef, promptFileRef) = when (node.type) {
+                    NodeType.AGENT -> {
+                        // 提示词在外部文件
+                        val fileRef = "nodes/${node.id}_prompt.md"
+                        Pair(null, fileRef)
+                    }
+                    else -> Pair(node.config.prompt, null)
+                }
+                
                 NodeDefinition(
                     id = node.id,
                     type = node.type.value,
                     name = node.name,
                     position = PositionDefinition(node.position.x, node.position.y),
                     config = NodeConfigDefinition(
-                        code = node.config.code,
-                        prompt = node.config.prompt,
+                        code = codeRef,
+                        codeFile = codeFileRef,
+                        prompt = promptRef,
+                        promptFile = promptFileRef,
                         model = node.config.model,
                         condition = node.config.condition,
                         method = node.config.method,
@@ -65,11 +91,6 @@ class WorkflowExporter(private val projectBasePath: String) {
         )
         
         File(workflowDir, "workflow.json").writeText(gson.toJson(workflowDef))
-        
-        // 2. 导出各个节点的代码/提示词文件
-        workflow.nodes.forEach { node ->
-            exportNodeFiles(node, nodesDir)
-        }
         
         // 3. 导出 README
         File(workflowDir, "README.md").writeText(generateReadme(workflow))

@@ -51,7 +51,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         foreground = UIUtil.getTextFieldForeground()
     }
     
-    private val canvas = WorkflowCanvas()
+    private val canvas = WorkflowCanvas(project)
     private val folderListModel = DefaultListModel<String>()
     private val folderList = JList(folderListModel)
     

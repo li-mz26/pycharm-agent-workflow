@@ -1,17 +1,21 @@
 package com.limz26.workflow.ui
 
+import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.util.ui.UIUtil
 import com.limz26.workflow.model.*
 import java.awt.*
 import java.awt.event.*
+import java.io.File
 import javax.swing.JPanel
 import javax.swing.SwingUtilities
 
 /**
  * 工作流可视化画布 - 渲染 DAG
- * 支持：滚轮缩放、中键拖动画布、左键移动节点
+ * 支持：滚轮缩放、中键拖动画布、左键移动节点、双击打开代码文件
  */
-class WorkflowCanvas : JPanel() {
+class WorkflowCanvas(private val project: Project? = null) : JPanel() {
 
     private var loadedWorkflow: LoadedWorkflow? = null
     private var workflow: Workflow? = null
@@ -82,6 +86,16 @@ class WorkflowCanvas : JPanel() {
                 isDraggingNode = false
                 dragNodeId = null
                 cursor = Cursor.getDefaultCursor()
+            }
+
+            override fun mouseClicked(e: MouseEvent) {
+                // 双击打开代码文件
+                if (e.clickCount == 2 && SwingUtilities.isLeftMouseButton(e)) {
+                    val node = findNodeAt(e.x, e.y)
+                    if (node != null) {
+                        openNodeFileInEditor(node)
+                    }
+                }
             }
         })
 
@@ -489,6 +503,48 @@ class WorkflowCanvas : JPanel() {
             val y = node.position.y
             canvasPoint.x >= x && canvasPoint.x <= x + nodeSize.width &&
             canvasPoint.y >= y && canvasPoint.y <= y + nodeSize.height
+        }
+    }
+
+    /**
+     * 在 IDE 编辑器中打开节点的代码文件
+     */
+    private fun openNodeFileInEditor(node: NodeDefinition) {
+        if (project == null) return
+
+        val baseDir = loadedWorkflow?.baseDir
+        if (baseDir == null) {
+            println("Cannot open file: no base directory")
+            return
+        }
+
+        // 获取代码文件路径
+        val codeFilePath = when (node.type) {
+            "code" -> node.config.codeFile ?: "nodes/${node.id}.py"
+            "agent" -> node.config.promptFile ?: "nodes/${node.id}_prompt.md"
+            else -> null
+        }
+
+        if (codeFilePath == null) {
+            println("No file to open for node type: ${node.type}")
+            return
+        }
+
+        // 构建完整文件路径
+        val file = File(baseDir, codeFilePath)
+        if (!file.exists()) {
+            println("File does not exist: ${file.absolutePath}")
+            return
+        }
+
+        // 在 IDE 中打开文件
+        val virtualFile = LocalFileSystem.getInstance().findFileByIoFile(file)
+        if (virtualFile != null) {
+            SwingUtilities.invokeLater {
+                FileEditorManager.getInstance(project).openFile(virtualFile, true)
+            }
+        } else {
+            println("Cannot find virtual file for: ${file.absolutePath}")
         }
     }
 
