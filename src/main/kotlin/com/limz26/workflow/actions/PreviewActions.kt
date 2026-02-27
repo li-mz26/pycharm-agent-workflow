@@ -5,6 +5,7 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindowManager
+import com.limz26.workflow.model.WorkflowLoader
 import com.limz26.workflow.ui.WorkflowPreviewPanel
 import com.limz26.workflow.ui.WorkflowPreviewToolWindowFactory
 import java.io.File
@@ -13,11 +14,13 @@ import java.io.File
  * 预览工作流动作 - 右键工作流文件夹触发
  */
 class PreviewWorkflowAction : AnAction("Preview Workflow") {
-    
+
+    private val loader = WorkflowLoader()
+
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
         val virtualFile = e.getData(CommonDataKeys.VIRTUAL_FILE) ?: return
-        
+
         val workflowDir = File(virtualFile.path)
         if (!isWorkflowDirectory(workflowDir)) {
             com.intellij.openapi.ui.Messages.showWarningDialog(
@@ -27,29 +30,41 @@ class PreviewWorkflowAction : AnAction("Preview Workflow") {
             )
             return
         }
-        
+
+        // 加载工作流
+        val loadedWorkflow = loader.load(workflowDir)
+        if (loadedWorkflow == null) {
+            com.intellij.openapi.ui.Messages.showErrorDialog(
+                project,
+                "无法加载工作流: ${workflowDir.name}",
+                "加载失败"
+            )
+            return
+        }
+
         // 打开预览工具窗口
         val toolWindow = ToolWindowManager.getInstance(project).getToolWindow("Workflow Preview")
         toolWindow?.show {
             val content = toolWindow.contentManager.getContent(0)
             val panel = content?.component as? WorkflowPreviewPanel
-            panel?.loadWorkflow(workflowDir)
+            panel?.loadWorkflow(loadedWorkflow)
         }
     }
-    
+
     override fun update(e: AnActionEvent) {
         val virtualFile = e.getData(CommonDataKeys.VIRTUAL_FILE)
         val project = e.project
-        
+
         e.presentation.isEnabledAndVisible = if (virtualFile != null && project != null) {
             virtualFile.isDirectory && isWorkflowDirectory(File(virtualFile.path))
         } else {
             false
         }
     }
-    
+
     private fun isWorkflowDirectory(dir: File): Boolean {
-        return dir.isDirectory && File(dir, "workflow.json").exists()
+        return dir.isDirectory && (File(dir, "workflow.json").exists() ||
+            dir.listFiles { f -> f.isFile && f.extension == "json" }?.isNotEmpty() == true)
     }
 }
 
@@ -64,7 +79,7 @@ class RefreshWorkflowsAction : AnAction("Refresh Workflows") {
         val panel = content?.component as? WorkflowPreviewPanel
         panel?.refresh()
     }
-    
+
     override fun update(e: AnActionEvent) {
         e.presentation.isEnabledAndVisible = e.project != null
     }
