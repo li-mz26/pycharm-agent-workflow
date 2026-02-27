@@ -1,0 +1,78 @@
+{
+  "name": "示例数据处理工作流",
+  "description": "读取数据、清洗、分析的工作流",
+  "nodes": [
+    {
+      "id": "start_001",
+      "type": "start",
+      "name": "开始",
+      "position": {"x": 100, "y": 100},
+      "config": {
+        "outputs": {"raw_data": "list"}
+      }
+    },
+    {
+      "id": "code_001",
+      "type": "code",
+      "name": "数据清洗",
+      "position": {"x": 300, "y": 100},
+      "config": {
+        "code": "def main(inputs):\n    data = inputs.get('raw_data', [])\n    cleaned = [x for x in data if x is not None]\n    return {'cleaned_data': cleaned}",
+        "inputs": {"raw_data": "start_001.raw_data"},
+        "outputs": {"cleaned_data": "list"}
+      }
+    },
+    {
+      "id": "condition_001",
+      "type": "condition",
+      "name": "数据量检查",
+      "position": {"x": 500, "y": 100},
+      "config": {
+        "condition": "len(cleaned_data) > 0"
+      }
+    },
+    {
+      "id": "agent_001",
+      "type": "agent",
+      "name": "数据分析",
+      "position": {"x": 700, "y": 50},
+      "config": {
+        "prompt": "分析以下数据并给出统计摘要:\n\n{{cleaned_data}}",
+        "model": "gpt-4",
+        "inputs": {"cleaned_data": "code_001.cleaned_data"},
+        "outputs": {"summary": "string"}
+      }
+    },
+    {
+      "id": "code_002",
+      "type": "code",
+      "name": "空数据处理",
+      "position": {"x": 700, "y": 150},
+      "config": {
+        "code": "def main(inputs):\n    return {'message': '没有数据需要处理'}",
+        "outputs": {"message": "string"}
+      }
+    },
+    {
+      "id": "end_001",
+      "type": "end",
+      "name": "结束",
+      "position": {"x": 900, "y": 100},
+      "config": {}
+    }
+  ],
+  "edges": [
+    {"id": "edge_001", "source": "start_001", "target": "code_001"},
+    {"id": "edge_002", "source": "code_001", "target": "condition_001"},
+    {"id": "edge_003", "source": "condition_001", "target": "agent_001", "condition": "有数据"},
+    {"id": "edge_004", "source": "condition_001", "target": "code_002", "condition": "无数据"},
+    {"id": "edge_005", "source": "agent_001", "target": "end_001"},
+    {"id": "edge_006", "source": "code_002", "target": "end_001"}
+  ],
+  "variables": {
+    "raw_data": {"type": "list"},
+    "cleaned_data": {"type": "list"},
+    "summary": {"type": "string"},
+    "message": {"type": "string"}
+  }
+}

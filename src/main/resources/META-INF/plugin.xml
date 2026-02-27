@@ -41,12 +41,19 @@
     </extensions>
 
     <actions>
-        <action id="com.limz26.workflow.GenerateWorkflowAction"
-                class="com.limz26.workflow.actions.GenerateWorkflowAction"
-                text="Generate Workflow"
-                description="Generate workflow using LLM agent">
-            <add-to-group group-id="EditorPopupMenu" anchor="after" relative-to-action="CopyPasteGroup"/>
+        <action id="com.limz26.workflow.OpenWorkflowPanel"
+                class="com.limz26.workflow.actions.OpenWorkflowPanelAction"
+                text="Open Agent Workflow"
+                description="Open the Agent Workflow tool window">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
             <keyboard-shortcut keymap="$default" first-keystroke="ctrl shift W"/>
+        </action>
+        
+        <action id="com.limz26.workflow.GenerateFromSelection"
+                class="com.limz26.workflow.actions.GenerateWorkflowFromSelectionAction"
+                text="Generate Workflow from Selection"
+                description="Generate workflow from selected code">
+            <add-to-group group-id="EditorPopupMenu" anchor="after" relative-to-action="CopyPasteGroup"/>
         </action>
     </actions>
 </idea-plugin>

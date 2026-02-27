@@ -2,35 +2,151 @@ package com.limz26.workflow.ui
 
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.SimpleToolWindowPanel
+import com.intellij.ui.JBSplitter
+import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
-import com.intellij.ui.components.JBTextField
-import javax.swing.JButton
-import javax.swing.JLabel
-import javax.swing.JPanel
+import com.intellij.util.ui.JBUI
+import com.limz26.workflow.agent.WorkflowAgent
+import com.limz26.workflow.model.*
 import java.awt.BorderLayout
+import java.awt.Dimension
+import javax.swing.*
 
+/**
+ * 主工作流面板 - 对话 + 可视化
+ */
 class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false, true) {
+    
+    private val agent = WorkflowAgent()
+    private var currentWorkflow: Workflow? = null
+    
+    private val chatArea = JTextArea().apply {
+        isEditable = false
+        lineWrap = true
+        wrapStyleWord = true
+        border = JBUI.Borders.empty(10)
+    }
+    
+    private val inputField = JBTextArea(3, 40).apply {
+        lineWrap = true
+        wrapStyleWord = true
+        border = JBUI.Borders.empty(5)
+    }
+    
+    private val canvas = WorkflowCanvas()
+    
     init {
-        val mainPanel = JPanel(BorderLayout())
+        // 左侧面板：对话
+        val chatPanel = createChatPanel()
         
-        // Input area
+        // 右侧面板：可视化画布
+        val canvasPanel = createCanvasPanel()
+        
+        // 分割面板
+        val splitter = JBSplitter(false, 0.4f)
+        splitter.firstComponent = chatPanel
+        splitter.secondComponent = canvasPanel
+        
+        setContent(splitter)
+        
+        // 欢迎消息
+        appendMessage("Agent", "你好！我是工作流助手。请描述你想要创建的工作流，我会帮你生成 DAG 结构。\n\n例如：\n- \"创建一个数据清洗工作流，先读取 CSV，然后过滤空值，最后保存\"\n- \"帮我做一个带条件分支的审批流程\"")
+    }
+    
+    private fun createChatPanel(): JPanel {
+        val panel = JPanel(BorderLayout())
+        panel.border = BorderFactory.createTitledBorder("对话")
+        
+        // 聊天记录
+        val scrollPane = JBScrollPane(chatArea)
+        panel.add(scrollPane, BorderLayout.CENTER)
+        
+        // 输入区域
         val inputPanel = JPanel(BorderLayout())
-        inputPanel.add(JLabel("Describe your workflow:"), BorderLayout.NORTH)
-        val inputArea = JBTextArea(5, 40)
-        inputPanel.add(inputArea, BorderLayout.CENTER)
+        inputPanel.border = JBUI.Borders.empty(5)
         
-        // Generate button
-        val generateButton = JButton("Generate Workflow")
-        generateButton.addActionListener {
-            val prompt = inputArea.text
-            if (prompt.isNotBlank()) {
-                // TODO: Call LLM agent to generate workflow
-                println("Generating workflow for: $prompt")
-            }
+        val scrollInput = JBScrollPane(inputField)
+        scrollInput.preferredSize = Dimension(200, 80)
+        inputPanel.add(scrollInput, BorderLayout.CENTER)
+        
+        // 按钮
+        val buttonPanel = JPanel()
+        val sendButton = JButton("发送").apply {
+            addActionListener { onSend() }
         }
-        inputPanel.add(generateButton, BorderLayout.SOUTH)
+        val exportButton = JButton("导出").apply {
+            addActionListener { onExport() }
+        }
+        val validateButton = JButton("验证").apply {
+            addActionListener { onValidate() }
+        }
         
-        mainPanel.add(inputPanel, BorderLayout.NORTH)
-        setContent(mainPanel)
+        buttonPanel.add(sendButton)
+        buttonPanel.add(validateButton)
+        buttonPanel.add(exportButton)
+        inputPanel.add(buttonPanel, BorderLayout.SOUTH)
+        
+        panel.add(inputPanel, BorderLayout.SOUTH)
+        return panel
+    }
+    
+    private fun createCanvasPanel(): JPanel {
+        val panel = JPanel(BorderLayout())
+        panel.border = BorderFactory.createTitledBorder("工作流可视化")
+        panel.add(canvas, BorderLayout.CENTER)
+        return panel
+    }
+    
+    private fun onSend() {
+        val text = inputField.text.trim()
+        if (text.isEmpty()) return
+        
+        appendMessage("你", text)
+        inputField.text = ""
+        
+        // 生成工作流
+        val workflow = agent.generateWorkflow(text, WorkflowContext(currentWorkflow))
+        currentWorkflow = workflow
+        
+        // 更新画布
+        canvas.setWorkflow(workflow)
+        
+        // 回复
+        val nodeSummary = workflow.nodes.groupBy { it.type.value }
+            .map { "${it.key}: ${it.value.size}个" }
+            .joinToString(", ")
+        appendMessage("Agent", "已生成工作流 \"${workflow.name}\"\n节点: $nodeSummary\n\n你可以在右侧查看 DAG 结构，或继续对话修改。")
+    }
+    
+    private fun onValidate() {
+        val workflow = currentWorkflow
+        if (workflow == null) {
+            appendMessage("Agent", "还没有工作流，请先描述你的需求。")
+            return
+        }
+        
+        val result = agent.validateWorkflow(workflow)
+        if (result.isValid) {
+            appendMessage("Agent", "✅ 工作流验证通过！")
+        } else {
+            appendMessage("Agent", "❌ 发现问题:\n${result.errors.joinToString("\n") { "- $it" }}")
+        }
+    }
+    
+    private fun onExport() {
+        val workflow = currentWorkflow
+        if (workflow == null) {
+            appendMessage("Agent", "还没有工作流可导出。")
+            return
+        }
+        
+        val exporter = WorkflowExporter(project.basePath ?: ".")
+        val path = exporter.export(workflow)
+        appendMessage("Agent", "✅ 工作流已导出到:\n$path")
+    }
+    
+    private fun appendMessage(sender: String, message: String) {
+        chatArea.append("[$sender]\n$message\n\n")
+        chatArea.caretPosition = chatArea.document.length
     }
 }
