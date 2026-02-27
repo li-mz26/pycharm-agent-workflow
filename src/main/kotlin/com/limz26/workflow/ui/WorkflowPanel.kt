@@ -13,12 +13,12 @@ import com.limz26.workflow.agent.WorkflowContext
 import com.limz26.workflow.model.*
 import com.limz26.workflow.settings.AppSettings
 import com.limz26.workflow.util.WorkflowDetector
-import com.limz26.workflow.util.WorkflowFileInfo
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Dimension
 import java.awt.Font
 import javax.swing.*
+import javax.swing.border.MatteBorder
 
 /**
  * 主工作流面板 - 对话 + 可视化
@@ -28,8 +28,8 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     private val agent = WorkflowAgent()
     private val settings = service<AppSettings>()
     private var currentWorkflow: Workflow? = null
-    private var workflowPath: String = ""
-    private var workflowFiles: List<WorkflowFileInfo> = emptyList()
+    private var loadedWorkflows: List<LoadedWorkflow> = emptyList()
+    private var selectedWorkflow: LoadedWorkflow? = null
     
     // 使用 IDE 主题背景色
     private val chatArea = JTextArea().apply {
@@ -52,11 +52,11 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     }
     
     private val canvas = WorkflowCanvas()
-    private val workflowListModel = DefaultListModel<String>()
-    private val workflowList = JList(workflowListModel)
+    private val folderListModel = DefaultListModel<String>()
+    private val folderList = JList(folderListModel)
     
     init {
-        initWorkflowPath()
+        initWorkflowFolders()
         val leftPanel = createLeftPanel()
         val canvasPanel = createCanvasPanel()
         
@@ -68,56 +68,28 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         showWelcomeMessage()
     }
     
-    private fun initWorkflowPath() {
-        // 直接使用项目根目录作为工作流路径
-        workflowPath = project.basePath ?: "."
-        
-        // 如果用户配置了自定义路径，则使用自定义路径
-        if (settings.workflowPath.isNotEmpty()) {
-            val customDir = java.io.File(settings.workflowPath)
-            if (customDir.exists() && customDir.isDirectory) {
-                workflowPath = settings.workflowPath
-            }
-        }
-        
-        // 扫描工作流文件（包括项目根目录和检测到的子目录）
-        workflowFiles = scanAllWorkflowFiles()
-        updateWorkflowList()
+    private fun initWorkflowFolders() {
+        loadedWorkflows = WorkflowDetector.detectWorkflowFolders(project)
+        updateFolderList()
     }
     
-    private fun scanAllWorkflowFiles(): List<WorkflowFileInfo> {
-        val allFiles = mutableListOf<WorkflowFileInfo>()
-        
-        // 1. 扫描项目根目录
-        allFiles.addAll(WorkflowDetector.scanWorkflowFiles(workflowPath))
-        
-        // 2. 如果启用了自动检测，也扫描检测到的子目录
-        if (settings.autoDetectWorkflows) {
-            val detectedDirs = WorkflowDetector.detectWorkflowDirs(project)
-            detectedDirs.forEach { dir ->
-                if (dir != workflowPath) { // 避免重复扫描根目录
-                    allFiles.addAll(WorkflowDetector.scanWorkflowFiles(dir))
-                }
-            }
+    private fun updateFolderList() {
+        folderListModel.clear()
+        loadedWorkflows.forEach { workflow ->
+            folderListModel.addElement("✓ ${workflow.name}")
         }
-        
-        return allFiles.sortedBy { it.name }
-    }
-    
-    private fun updateWorkflowList() {
-        workflowListModel.clear()
-        workflowFiles.forEach { workflowListModel.addElement(it.name + "." + it.extension) }
-        if (workflowFiles.isEmpty()) workflowListModel.addElement("(无工作流文件)")
+        if (loadedWorkflows.isEmpty()) {
+            folderListModel.addElement("(无工作流文件夹)")
+        }
     }
     
     private fun showWelcomeMessage() {
-        val pathInfo = if (workflowPath == project.basePath) "项目根目录" else workflowPath
-        val apiStatus = if (settings.apiKey.isBlank()) "未配置 API Key" else "已配置 (${settings.model})"
+        val folderCount = loadedWorkflows.size
+        val apiStatus = if (settings.apiKey.isBlank()) "未配置" else "已配置"
         
         chatArea.append("═══ Agent Workflow 助手 ═══\n\n")
         chatArea.append("用自然语言描述你的工作流，我来帮你生成\n\n")
-        chatArea.append("📁 工作流路径: $pathInfo\n")
-        chatArea.append("📊 文件数量: ${workflowFiles.size} 个\n")
+        chatArea.append("📁 工作流文件夹: $folderCount 个\n")
         chatArea.append("🔑 API 状态: $apiStatus\n\n")
         chatArea.append("─── 示例 ───\n")
         chatArea.append("• 创建一个数据清洗工作流\n")
@@ -128,24 +100,26 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     private fun createLeftPanel(): JPanel {
         val panel = JPanel(BorderLayout())
         
-        // 工作流列表
+        // 工作流文件夹列表
         val listPanel = JPanel(BorderLayout())
-        listPanel.border = BorderFactory.createTitledBorder("工作流 (${workflowFiles.size})")
+        listPanel.border = BorderFactory.createTitledBorder("工作流 (${loadedWorkflows.size})")
         
-        workflowList.selectionMode = ListSelectionModel.SINGLE_SELECTION
-        workflowList.addListSelectionListener { event ->
+        folderList.selectionMode = ListSelectionModel.SINGLE_SELECTION
+        folderList.addListSelectionListener { event ->
             if (!event.valueIsAdjusting) {
-                val idx = workflowList.selectedIndex
-                if (idx >= 0 && idx < workflowFiles.size) loadWorkflowFile(workflowFiles[idx])
+                val idx = folderList.selectedIndex
+                if (idx >= 0 && idx < loadedWorkflows.size) {
+                    loadWorkflowFolder(loadedWorkflows[idx])
+                }
             }
         }
         
-        listPanel.add(JBScrollPane(workflowList), BorderLayout.CENTER)
+        listPanel.add(JBScrollPane(folderList), BorderLayout.CENTER)
         listPanel.add(JButton("刷新").apply {
-            addActionListener { initWorkflowPath() }
+            addActionListener { initWorkflowFolders() }
         }, BorderLayout.SOUTH)
         
-        // 对话面板
+        // 对话面板 - 带分隔线
         val chatPanel = createChatPanel()
         
         // 分割面板
@@ -157,34 +131,127 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         return panel
     }
     
-    private fun loadWorkflowFile(fileInfo: WorkflowFileInfo) {
-        addSystemMessage("加载中: ${fileInfo.name}...")
+    private fun loadWorkflowFolder(workflow: LoadedWorkflow) {
+        selectedWorkflow = workflow
+        addSystemMessage("加载工作流: ${workflow.name}")
+        
         try {
-            java.io.File(fileInfo.path).readText()
-            addAgentMessage("已加载: ${fileInfo.name}.${fileInfo.extension}")
+            // 转换为 Workflow 对象并显示
+            currentWorkflow = convertToWorkflow(workflow)
+            canvas.setWorkflow(currentWorkflow!!)
+            addAgentMessage("已加载: ${workflow.name}\n节点数: ${workflow.definition.nodes.size}")
         } catch (e: Exception) {
             addErrorMessage("加载失败: ${e.message}")
         }
+    }
+    
+    private fun convertToWorkflow(loaded: LoadedWorkflow): Workflow {
+        val def = loaded.definition
+        
+        return Workflow(
+            name = def.name,
+            description = def.description,
+            nodes = def.nodes.map { nodeDef ->
+                WorkflowNode(
+                    id = nodeDef.id,
+                    type = NodeType.valueOf(nodeDef.type.uppercase()),
+                    name = nodeDef.name,
+                    position = Position(
+                        x = nodeDef.position.x,
+                        y = nodeDef.position.y
+                    ),
+                    config = NodeConfig(
+                        code = nodeDef.config.code,
+                        prompt = nodeDef.config.prompt,
+                        model = nodeDef.config.model,
+                        inputs = nodeDef.config.inputs,
+                        outputs = nodeDef.config.outputs
+                    )
+                )
+            },
+            edges = def.edges.map { edgeDef ->
+                WorkflowEdge(
+                    source = edgeDef.source,
+                    target = edgeDef.target
+                )
+            },
+            variables = def.variables.mapValues { Variable(it.key, it.value.type) }
+        )
     }
     
     private fun createChatPanel(): JPanel {
         val panel = JPanel(BorderLayout())
         panel.border = BorderFactory.createTitledBorder("对话")
         
+        // 聊天区域
         panel.add(JBScrollPane(chatArea), BorderLayout.CENTER)
         
-        // 输入区域
-        val inputPanel = JPanel(BorderLayout())
-        inputPanel.add(JBScrollPane(inputField), BorderLayout.CENTER)
+        // 分隔线
+        val separator = JSeparator(JSeparator.HORIZONTAL)
+        separator.foreground = UIUtil.getLabelDisabledForeground()
+        separator.preferredSize = Dimension(separator.preferredSize.width, 2)
+        panel.add(separator, BorderLayout.SOUTH)
         
+        // 输入区域面板
+        val inputWrapper = JPanel(BorderLayout())
+        inputWrapper.border = JBUI.Borders.empty(5)
+        
+        // 输入框
+        inputWrapper.add(JBScrollPane(inputField), BorderLayout.CENTER)
+        
+        // 按钮面板
         val buttonPanel = JPanel()
         buttonPanel.add(JButton("发送").apply { addActionListener { onSend() } })
         buttonPanel.add(JButton("验证").apply { addActionListener { onValidate() } })
         buttonPanel.add(JButton("导出").apply { addActionListener { onExport() } })
-        inputPanel.add(buttonPanel, BorderLayout.SOUTH)
+        inputWrapper.add(buttonPanel, BorderLayout.SOUTH)
         
-        panel.add(inputPanel, BorderLayout.SOUTH)
-        return panel
+        // 将输入区域放在分隔线下方
+        val bottomPanel = JPanel(BorderLayout())
+        bottomPanel.add(inputWrapper, BorderLayout.CENTER)
+        
+        // 使用分割面板实现上下布局
+        val fullPanel = JPanel(BorderLayout())
+        fullPanel.add(panel, BorderLayout.CENTER)
+        fullPanel.add(bottomPanel, BorderLayout.SOUTH)
+        
+        // 重新组织：聊天记录在上，分隔线，输入在下
+        val mainPanel = JPanel(BorderLayout())
+        
+        // 上部：聊天记录（带标题边框）
+        val chatAreaPanel = JPanel(BorderLayout())
+        chatAreaPanel.border = BorderFactory.createTitledBorder("对话历史")
+        chatAreaPanel.add(JBScrollPane(chatArea), BorderLayout.CENTER)
+        
+        // 下部：输入区域
+        val inputPanel = JPanel(BorderLayout())
+        inputPanel.border = JBUI.Borders.empty(5)
+        
+        // 添加分隔线到输入面板顶部
+        val topBorder = MatteBorder(2, 0, 0, 0, UIUtil.getLabelDisabledForeground())
+        inputPanel.border = BorderFactory.createCompoundBorder(
+            topBorder,
+            JBUI.Borders.empty(10)
+        )
+        
+        inputPanel.add(JBScrollPane(inputField), BorderLayout.CENTER)
+        
+        val btnPanel = JPanel()
+        btnPanel.add(JButton("发送").apply { addActionListener { onSend() } })
+        btnPanel.add(JButton("验证").apply { addActionListener { onValidate() } })
+        btnPanel.add(JButton("导出").apply { addActionListener { onExport() } })
+        inputPanel.add(btnPanel, BorderLayout.SOUTH)
+        
+        // 分割面板
+        val splitter = JSplitPane(JSplitPane.VERTICAL_SPLIT)
+        splitter.topComponent = chatAreaPanel
+        splitter.bottomComponent = inputPanel
+        splitter.resizeWeight = 0.75  // 聊天记录占 75%
+        splitter.dividerSize = 2
+        
+        mainPanel.add(splitter, BorderLayout.CENTER)
+        
+        return mainPanel
     }
     
     private fun createCanvasPanel(): JPanel {
@@ -244,9 +311,11 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     
     private fun onExport() {
         val workflow = currentWorkflow ?: return addAgentMessage("没有可导出的工作流")
-        val path = WorkflowExporter(workflowPath).export(workflow)
-        addAgentMessage("已导出到: $path")
-        initWorkflowPath()
+        val path = selectedWorkflow?.baseDir?.absolutePath ?: project.basePath ?: "."
+        val exporter = WorkflowExporter(path)
+        val exportedPath = exporter.export(workflow)
+        addAgentMessage("已导出到: $exportedPath")
+        initWorkflowFolders()
     }
     
     private fun addUserMessage(message: String) {

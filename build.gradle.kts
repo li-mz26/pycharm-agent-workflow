@@ -13,7 +13,7 @@ repositories {
 
 dependencies {
     implementation("com.google.code.gson:gson:2.10.1")
-    
+
     // Test dependencies
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlin:kotlin-test:1.9.22")
@@ -22,7 +22,7 @@ dependencies {
 intellij {
     version.set("2024.3")
     type.set("PC")
-    
+
     plugins.set(listOf())
 }
 
