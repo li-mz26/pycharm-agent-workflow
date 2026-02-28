@@ -26,7 +26,7 @@ dependencies {
 }
 
 intellij {
-    version.set("2024.3")
+    version.set("2024.1")
     type.set("PC")
 
     plugins.set(listOf())
@@ -42,9 +42,15 @@ tasks {
         kotlinOptions.jvmTarget = "17"
     }
 
+
+    // Workaround: avoid flaky online self-version check in restricted networks
+    withType<org.jetbrains.intellij.tasks.InitializeIntelliJPluginTask> {
+        enabled = false
+    }
+
     patchPluginXml {
-        sinceBuild.set("243")
-        untilBuild.set("253.*")
+        sinceBuild.set("241")
+        untilBuild.set("241.*")
     }
 
     signPlugin {
