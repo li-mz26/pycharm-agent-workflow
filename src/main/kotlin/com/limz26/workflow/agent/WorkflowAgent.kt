@@ -17,7 +17,7 @@ class WorkflowAgent {
     /**
      * 解析用户输入，生成工作流
      */
-    fun generateWorkflow(userInput: String, context: WorkflowContext? = null): Workflow {
+    fun generateWorkflow(userInput: String, _context: WorkflowContext? = null): Workflow {
         // 检查 API 配置
         if (settings.apiKey.isBlank()) {
             return createErrorWorkflow("请先在 Settings → Other Settings → Agent Workflow (LLM 配置) 中配置 API Key")
@@ -35,7 +35,7 @@ class WorkflowAgent {
     /**
      * 继续对话，修改工作流
      */
-    fun modifyWorkflow(workflow: Workflow, userInput: String): Workflow {
+    fun modifyWorkflow(workflow: Workflow, _userInput: String): Workflow {
         // TODO: 调用 LLM API 理解修改意图
         return workflow
     }
@@ -95,32 +95,37 @@ class WorkflowAgent {
     }
 
     private fun createErrorWorkflow(errorMessage: String): Workflow {
+        val startNode = WorkflowNode(
+            id = "node_1",
+            type = NodeType.START,
+            name = "开始",
+            position = Position(100, 100)
+        )
+
+        val errorNode = WorkflowNode(
+            id = "node_2",
+            type = NodeType.CODE,
+            name = "错误信息",
+            position = Position(300, 100),
+            config = NodeConfig(
+                code = "# $errorMessage"
+            )
+        )
+
+        val endNode = WorkflowNode(
+            id = "node_3",
+            type = NodeType.END,
+            name = "结束",
+            position = Position(500, 100)
+        )
+
         return Workflow(
             name = "错误",
             description = errorMessage,
-            nodes = listOf(
-                WorkflowNode(
-                    type = NodeType.START,
-                    name = "开始",
-                    position = Position(100, 100)
-                ),
-                WorkflowNode(
-                    type = NodeType.CODE,
-                    name = "错误信息",
-                    position = Position(300, 100),
-                    config = NodeConfig(
-                        code = "# $errorMessage"
-                    )
-                ),
-                WorkflowNode(
-                    type = NodeType.END,
-                    name = "结束",
-                    position = Position(500, 100)
-                )
-            ),
+            nodes = listOf(startNode, errorNode, endNode),
             edges = listOf(
-                WorkflowEdge(source = "node_1", target = "node_2"),
-                WorkflowEdge(source = "node_2", target = "node_3")
+                WorkflowEdge(source = startNode.id, target = errorNode.id),
+                WorkflowEdge(source = errorNode.id, target = endNode.id)
             ),
             variables = emptyMap()
         )
@@ -128,24 +133,34 @@ class WorkflowAgent {
 
     private fun parseWorkflowFromJson(json: String, userInput: String): Workflow {
         return try {
-            kotlinx.serialization.json.Json.parseToJsonElement(json).jsonObject.let { obj ->
+            Json.parseToJsonElement(json).jsonObject.let { obj ->
                 val name = obj["name"]?.jsonPrimitive?.content ?: "未命名工作流"
                 val description = obj["description"]?.jsonPrimitive?.content ?: userInput
 
                 val nodes = obj["nodes"]?.jsonArray?.mapIndexed { index, nodeElement ->
                     val nodeObj = nodeElement.jsonObject
+                    val positionObj = nodeObj["position"]?.jsonObject
+                    val configObj = nodeObj["config"]?.jsonObject
+
                     WorkflowNode(
                         id = nodeObj["id"]?.jsonPrimitive?.content ?: "node_${index + 1}",
                         type = NodeType.valueOf(nodeObj["type"]?.jsonPrimitive?.content?.uppercase() ?: "CODE"),
                         name = nodeObj["name"]?.jsonPrimitive?.content ?: "节点${index + 1}",
                         position = Position(
-                            x = nodeObj["x"]?.jsonPrimitive?.intOrNull ?: (100 + index * 200),
-                            y = nodeObj["y"]?.jsonPrimitive?.intOrNull ?: 100
+                            x = positionObj?.get("x")?.jsonPrimitive?.intOrNull
+                                ?: nodeObj["x"]?.jsonPrimitive?.intOrNull
+                                ?: (100 + index * 200),
+                            y = positionObj?.get("y")?.jsonPrimitive?.intOrNull
+                                ?: nodeObj["y"]?.jsonPrimitive?.intOrNull
+                                ?: 100
                         ),
                         config = NodeConfig(
-                            code = nodeObj["code"]?.jsonPrimitive?.content,
-                            prompt = nodeObj["prompt"]?.jsonPrimitive?.content,
-                            model = nodeObj["model"]?.jsonPrimitive?.content
+                            code = configObj?.get("code")?.jsonPrimitive?.contentOrNull
+                                ?: nodeObj["code"]?.jsonPrimitive?.contentOrNull,
+                            prompt = configObj?.get("prompt")?.jsonPrimitive?.contentOrNull
+                                ?: nodeObj["prompt"]?.jsonPrimitive?.contentOrNull,
+                            model = configObj?.get("model")?.jsonPrimitive?.contentOrNull
+                                ?: nodeObj["model"]?.jsonPrimitive?.contentOrNull
                         )
                     )
                 } ?: emptyList()

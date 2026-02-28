@@ -1,7 +1,7 @@
 plugins {
     id("java")
     id("org.jetbrains.kotlin.jvm") version "1.9.22"
-    id("org.jetbrains.intellij") version "1.17.0"
+    id("org.jetbrains.intellij") version "1.17.4"
 }
 
 group = "com.limz26"
@@ -24,6 +24,7 @@ intellij {
     type.set("PC")
 
     plugins.set(listOf())
+    instrumentCode.set(false)
 }
 
 tasks {
