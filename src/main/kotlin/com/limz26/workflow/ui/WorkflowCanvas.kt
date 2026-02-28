@@ -291,7 +291,7 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
 
     private fun drawZoomInfo(g: Graphics2D) {
         g.color = if (UIUtil.isUnderDarcula()) Color(200, 200, 200) else Color(100, 100, 100)
-        g.font = blockFont(Font.PLAIN, 12)
+        g.font = Font("Dialog", Font.PLAIN, 11)
         val zoomText = "${(scale * 100).toInt()}%"
         g.drawString(zoomText, width - 50, height - 20)
 
@@ -430,7 +430,7 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
 
         // 类型标签
         g.color = Color(220, 220, 220)
-        g.font = blockFont(Font.PLAIN, 12)
+        g.font = blockFont(Font.BOLD, 12)
         g.drawString(node.type.uppercase(), x + 38, y + 50)
 
         // 选中时显示额外信息
@@ -467,7 +467,7 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
             g.fillRoundRect(x, y, maxWidth.coerceAtLeast(140), height, 8, 8)
 
             g.color = Color.WHITE
-            g.font = blockFont(Font.PLAIN, 12)
+            g.font = blockFont(Font.BOLD, 12)
             details.forEachIndexed { index, text ->
                 g.drawString(text, x + padding, y + padding + (index + 1) * lineHeight - 4)
             }

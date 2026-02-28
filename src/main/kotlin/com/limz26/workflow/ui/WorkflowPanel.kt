@@ -13,6 +13,8 @@ import com.limz26.workflow.agent.WorkflowContext
 import com.limz26.workflow.model.*
 import com.limz26.workflow.settings.AppSettings
 import com.limz26.workflow.util.WorkflowDetector
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.Font
@@ -36,7 +38,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         lineWrap = true
         wrapStyleWord = true
         border = JBUI.Borders.empty(10)
-        font = Font("Monospaced", Font.PLAIN, 13)
+        font = Font("Microsoft YaHei", Font.BOLD, 14)
         background = UIUtil.getPanelBackground()
         foreground = UIUtil.getLabelForeground()
     }
@@ -45,7 +47,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         lineWrap = true
         wrapStyleWord = true
         border = JBUI.Borders.empty(8)
-        font = font.deriveFont(14f)
+        font = Font("Microsoft YaHei", Font.BOLD, 14)
         background = UIUtil.getTextFieldBackground()
         foreground = UIUtil.getTextFieldForeground()
     }
@@ -59,7 +61,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         lineWrap = true
         wrapStyleWord = true
         border = JBUI.Borders.empty(8)
-        font = Font("Monospaced", Font.PLAIN, 12)
+        font = Font("Microsoft YaHei", Font.BOLD, 13)
     }
 
     private val testOutputArea = JBTextArea().apply {
@@ -67,7 +69,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         lineWrap = true
         wrapStyleWord = true
         border = JBUI.Borders.empty(8)
-        font = Font("Monospaced", Font.PLAIN, 12)
+        font = Font("Microsoft YaHei", Font.BOLD, 13)
         background = UIUtil.getPanelBackground()
         foreground = UIUtil.getLabelForeground()
     }
@@ -77,7 +79,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         lineWrap = true
         wrapStyleWord = true
         border = JBUI.Borders.empty(8)
-        font = Font("Monospaced", Font.PLAIN, 12)
+        font = Font("Microsoft YaHei", Font.BOLD, 13)
         background = UIUtil.getPanelBackground()
         foreground = UIUtil.getLabelForeground()
     }
@@ -244,6 +246,11 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         consolePanel.preferredSize = Dimension(200, 220)
         consolePanel.add(tabs, BorderLayout.CENTER)
 
+        val runPanel = JPanel(BorderLayout())
+        runPanel.border = JBUI.Borders.empty(6)
+        runPanel.add(JButton("工作流测试运行").apply { addActionListener { onRunWorkflowTest() } }, BorderLayout.EAST)
+        consolePanel.add(runPanel, BorderLayout.SOUTH)
+
         val splitter = JBSplitter(true, 0.70f)
         splitter.firstComponent = canvas
         splitter.secondComponent = consolePanel
@@ -319,6 +326,43 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         initWorkflowFolders()
     }
 
+
+    private fun onRunWorkflowTest() {
+        val workflow = currentWorkflow
+        if (workflow == null) {
+            addAgentMessage("请先加载或生成一个工作流")
+            return
+        }
+
+        val rawInput = testInputArea.text.trim().ifEmpty { "{}" }
+        val parsedInput = try {
+            Json.parseToJsonElement(rawInput).jsonObject
+        } catch (e: Exception) {
+            testOutputArea.text = "测试输入 JSON 格式错误：${e.message}"
+            appendWorkflowLog("测试运行失败：输入 JSON 格式错误")
+            return
+        }
+
+        val missingVars = workflow.variables.keys.filterNot { parsedInput.containsKey(it) }
+        val lines = mutableListOf<String>()
+        lines += "工作流：${workflow.name}"
+        lines += "节点数：${workflow.nodes.size}，连线数：${workflow.edges.size}"
+        lines += "输入字段：${parsedInput.keys.joinToString(", ").ifBlank { "(空)" }}"
+
+        if (missingVars.isNotEmpty()) {
+            lines += "缺失变量：${missingVars.joinToString(", ")}"
+        } else {
+            lines += "变量检查：通过"
+        }
+
+        val orderedNodeNames = workflow.nodes.joinToString(" -> ") { it.name }
+        lines += "执行预览：$orderedNodeNames"
+        lines += "说明：当前为本地模拟测试，未真正执行 code/agent 节点。"
+
+        val output = lines.joinToString("\n")
+        testOutputArea.text = output
+        appendWorkflowLog("测试运行完成：${workflow.name}")
+    }
 
     private fun buildWorkflowTestInput(workflow: Workflow): String {
         if (workflow.variables.isEmpty()) {

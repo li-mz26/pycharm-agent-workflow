@@ -3,7 +3,9 @@ package com.limz26.workflow.llm
 import com.intellij.openapi.components.service
 import com.limz26.workflow.settings.AppSettings
 import kotlinx.serialization.json.*
+import java.net.ConnectException
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URL
 
 /**
@@ -69,10 +71,12 @@ class LLMClient {
     }
 
     private fun callOpenAI(messages: List<Message>): String {
-        val url = URL("${settings.apiEndpoint}/chat/completions")
-        val conn = url.openConnection() as HttpURLConnection
+        val endpoint = buildChatCompletionsEndpoint(settings.apiEndpoint)
+        val conn = (URL(endpoint).openConnection() as HttpURLConnection)
 
         return try {
+            conn.connectTimeout = 10_000
+            conn.readTimeout = 60_000
             conn.requestMethod = "POST"
             conn.setRequestProperty("Authorization", "Bearer ${settings.apiKey}")
             conn.setRequestProperty("Content-Type", "application/json")
@@ -98,8 +102,7 @@ class LLMClient {
             val responseBody = if (statusCode in 200..299) {
                 conn.inputStream.bufferedReader().use { it.readText() }
             } else {
-                conn.errorStream?.bufferedReader()?.use { it.readText() }
-                    ?: ""
+                conn.errorStream?.bufferedReader()?.use { it.readText() } ?: ""
             }
 
             if (statusCode !in 200..299) {
@@ -107,6 +110,18 @@ class LLMClient {
             }
 
             parseOpenAIResponse(responseBody)
+        } catch (e: ConnectException) {
+            throw IllegalStateException(
+                "无法连接到大模型服务。endpoint=$endpoint；请确认 API Endpoint 可访问、端口未被拦截、代理/VPN 配置正确。原始错误: ${e.message}",
+                e
+            )
+        } catch (e: SocketTimeoutException) {
+            throw IllegalStateException(
+                "请求大模型服务超时。endpoint=$endpoint；请检查网络延迟或服务端负载。原始错误: ${e.message}",
+                e
+            )
+        } catch (e: Exception) {
+            throw IllegalStateException("调用大模型服务失败。endpoint=$endpoint；原始错误: ${e.message}", e)
         } finally {
             conn.disconnect()
         }
@@ -125,6 +140,22 @@ class LLMClient {
     private fun callGeneric(messages: List<Message>): String {
         // 通用 OpenAI 兼容格式
         return callOpenAI(messages)
+    }
+
+
+    private fun buildChatCompletionsEndpoint(rawEndpoint: String): String {
+        val normalized = rawEndpoint.trim().removeSuffix("/")
+        val withScheme = if (normalized.startsWith("http://") || normalized.startsWith("https://")) {
+            normalized
+        } else {
+            "https://$normalized"
+        }
+
+        return if (withScheme.endsWith("/chat/completions")) {
+            withScheme
+        } else {
+            "$withScheme/chat/completions"
+        }
     }
 
     private fun parseOpenAIResponse(json: String): String {
