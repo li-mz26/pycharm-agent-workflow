@@ -6,6 +6,7 @@ import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.util.ui.UIUtil
 import com.limz26.workflow.model.*
 import java.awt.*
+import java.awt.GraphicsEnvironment
 import java.awt.event.*
 import java.io.File
 import javax.swing.JPanel
@@ -45,6 +46,14 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
     )
 
     private val nodeSize = Dimension(140, 70)
+
+    private val blockFontFamily: String = run {
+        val preferred = listOf("Microsoft YaHei", "微软雅黑", "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", "Dialog")
+        val installed = GraphicsEnvironment.getLocalGraphicsEnvironment().availableFontFamilyNames.toSet()
+        preferred.firstOrNull { installed.contains(it) } ?: "Dialog"
+    }
+
+    private fun blockFont(style: Int, size: Int): Font = Font(blockFontFamily, style, size)
 
     init {
         background = UIUtil.getPanelBackground()
@@ -282,7 +291,7 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
 
     private fun drawZoomInfo(g: Graphics2D) {
         g.color = if (UIUtil.isUnderDarcula()) Color(200, 200, 200) else Color(100, 100, 100)
-        g.font = Font("Dialog", Font.PLAIN, 11)
+        g.font = blockFont(Font.PLAIN, 12)
         val zoomText = "${(scale * 100).toInt()}%"
         g.drawString(zoomText, width - 50, height - 20)
 
@@ -408,20 +417,20 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
 
         // 类型图标
         g.color = Color.WHITE
-        g.font = Font("Dialog", Font.BOLD, 14)
+        g.font = blockFont(Font.BOLD, 15)
         val icon = getNodeIcon(node.type)
         val fm = g.fontMetrics
         g.drawString(icon, x + 15 - fm.stringWidth(icon)/2, y + h/2 + 5)
 
         // 节点名称
         g.color = Color.WHITE
-        g.font = Font("Dialog", Font.BOLD, 12)
+        g.font = blockFont(Font.BOLD, 14)
         val nameText = if (node.name.length > 10) node.name.take(10) + "..." else node.name
         g.drawString(nameText, x + 38, y + 28)
 
         // 类型标签
         g.color = Color(220, 220, 220)
-        g.font = Font("Dialog", Font.PLAIN, 10)
+        g.font = blockFont(Font.PLAIN, 12)
         g.drawString(node.type.uppercase(), x + 38, y + 50)
 
         // 选中时显示额外信息
@@ -458,7 +467,7 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
             g.fillRoundRect(x, y, maxWidth.coerceAtLeast(140), height, 8, 8)
 
             g.color = Color.WHITE
-            g.font = Font("Dialog", Font.PLAIN, 11)
+            g.font = blockFont(Font.PLAIN, 12)
             details.forEachIndexed { index, text ->
                 g.drawString(text, x + padding, y + padding + (index + 1) * lineHeight - 4)
             }

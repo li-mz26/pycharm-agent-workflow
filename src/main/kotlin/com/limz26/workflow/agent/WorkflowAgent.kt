@@ -14,6 +14,65 @@ class WorkflowAgent {
     private val settings by lazy { service<AppSettings>() }
     private val llmClient by lazy { LLMClient() }
 
+    data class AgentResponse(
+        val reply: String,
+        val workflow: Workflow? = null
+    )
+
+    /**
+     * ReAct 风格对话：普通对话返回文本；工作流意图返回工作流 + 说明。
+     */
+    fun talk(userInput: String, context: WorkflowContext? = null): AgentResponse {
+        if (settings.apiKey.isBlank()) {
+            return AgentResponse("请先在 Settings → Other Settings → Agent Workflow 中配置 API Key。")
+        }
+
+        return if (looksLikeWorkflowIntent(userInput, context)) {
+            try {
+                val dsl = llmClient.generateWorkflowDSL(userInput)
+                val workflow = parseWorkflowFromJson(dsl, userInput)
+                AgentResponse("已为你生成工作流：${workflow.name}", workflow)
+            } catch (e: Exception) {
+                AgentResponse("我尝试生成工作流时失败：${e.message}")
+            }
+        } else {
+            try {
+                val reactSystemPrompt = """
+                    你是一个基于 ReAct 思路的中文编程助手。
+                    请在内部完成 Thought/Action/Observation 的推理，但最终只输出对用户可读的 `Final Answer`。
+                    回答要求：
+                    1) 使用中文，简洁清晰；
+                    2) 若用户只是闲聊或问候，直接自然回应；
+                    3) 若用户表达了明确“创建/修改工作流”意图，再建议生成工作流步骤；
+                    4) 不要输出 JSON，除非用户明确要求。
+                """.trimIndent()
+
+                val reply = llmClient.chat(
+                    listOf(
+                        LLMClient.Message("system", reactSystemPrompt),
+                        LLMClient.Message("user", userInput)
+                    )
+                ).ifBlank { "我在。你可以告诉我你想做什么工作流，或者直接问我问题。" }
+
+                AgentResponse(reply)
+            } catch (e: Exception) {
+                AgentResponse("当前无法连接到大模型服务（${e.message}）。请检查 API Endpoint / Key 或网络后重试。")
+            }
+        }
+    }
+
+    private fun looksLikeWorkflowIntent(userInput: String, context: WorkflowContext?): Boolean {
+        val text = userInput.lowercase()
+        val keywords = listOf(
+            "工作流", "workflow", "dag", "节点", "流程", "分支", "生成工作流", "创建工作流", "导出工作流",
+            "添加节点", "删除节点", "连接", "条件节点", "code节点", "agent节点"
+        )
+        val hasKeyword = keywords.any { text.contains(it) }
+        val hasCurrentWorkflow = context?.currentWorkflow != null
+        return hasKeyword || (hasCurrentWorkflow && (text.contains("修改") || text.contains("调整") || text.contains("优化")))
+    }
+
+
     /**
      * 解析用户输入，生成工作流
      */

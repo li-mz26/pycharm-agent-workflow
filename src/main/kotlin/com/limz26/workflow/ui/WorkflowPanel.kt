@@ -165,7 +165,8 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
             canvas.setWorkflow(workflow)
             addAgentMessage("已加载: ${workflow.name}\n节点数: ${workflow.definition.nodes.size}")
             appendWorkflowLog("加载完成: ${workflow.name}, 节点数=${workflow.definition.nodes.size}")
-            testOutputArea.text = workflow.definition.toString()
+            testInputArea.text = buildWorkflowTestInput(currentWorkflow!!)
+            testOutputArea.text = "已加载工作流，可在此查看执行输出或验证结果。"
         } catch (e: Exception) {
             addErrorMessage("加载失败: ${e.message}")
             appendWorkflowLog("加载失败: ${e.message}")
@@ -235,8 +236,8 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         panel.border = BorderFactory.createTitledBorder("工作流可视化")
 
         val tabs = JTabbedPane()
-        tabs.addTab("测试输入", JBScrollPane(testInputArea))
-        tabs.addTab("测试输出", JBScrollPane(testOutputArea))
+        tabs.addTab("测试输入（当前工作流）", JBScrollPane(testInputArea))
+        tabs.addTab("测试输出（当前工作流）", JBScrollPane(testOutputArea))
         tabs.addTab("节点/工作流日志", JBScrollPane(workflowLogArea))
 
         val consolePanel = JPanel(BorderLayout())
@@ -257,34 +258,31 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
 
         addUserMessage(text)
         inputField.text = ""
-        addSystemMessage("生成中...")
-        appendWorkflowLog("收到生成请求: ${text.take(80)}")
-        testInputArea.text = text
+        addSystemMessage("思考中...")
+        appendWorkflowLog("收到对话请求: ${text.take(80)}")
 
-        object : SwingWorker<Workflow, Void>() {
-            override fun doInBackground(): Workflow {
-                return agent.generateWorkflow(text, WorkflowContext(currentWorkflow))
+        object : SwingWorker<WorkflowAgent.AgentResponse, Void>() {
+            override fun doInBackground(): WorkflowAgent.AgentResponse {
+                return agent.talk(text, WorkflowContext(currentWorkflow))
             }
 
             override fun done() {
                 try {
-                    val workflow = get()
-                    currentWorkflow = workflow
+                    val response = get()
                     removeLastSystemMessage()
+                    addAgentMessage(response.reply)
 
-                    if (workflow.name == "错误") {
-                        addErrorMessage(workflow.description)
-                        appendWorkflowLog("生成失败: ${workflow.description}")
-                    } else {
-                        addAgentMessage("已生成工作流: ${workflow.name}")
+                    response.workflow?.let { workflow ->
+                        currentWorkflow = workflow
                         canvas.setWorkflow(workflow)
-                        appendWorkflowLog("生成完成: ${workflow.name}, 节点数=${workflow.nodes.size}")
-                        testOutputArea.text = workflow.toJson()
+                        appendWorkflowLog("工作流更新: ${workflow.name}, 节点数=${workflow.nodes.size}")
+                        testInputArea.text = buildWorkflowTestInput(workflow)
+                        testOutputArea.text = "工作流已更新，等待执行测试。"
                     }
                 } catch (e: Exception) {
                     removeLastSystemMessage()
                     addErrorMessage("错误: ${e.message}")
-                    appendWorkflowLog("生成异常: ${e.message}")
+                    appendWorkflowLog("对话异常: ${e.message}")
                 }
             }
         }.execute()
@@ -301,10 +299,12 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         if (result.isValid) {
             addAgentMessage("验证通过!")
             appendWorkflowLog("验证通过: ${workflow.name}")
+            testOutputArea.text = "验证通过：${workflow.name}"
         } else {
             val errorText = result.errors.joinToString(", ")
             addErrorMessage("问题: $errorText")
             appendWorkflowLog("验证失败: $errorText")
+            testOutputArea.text = "验证失败：$errorText"
         }
     }
 
@@ -315,7 +315,29 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         val exportedPath = exporter.export(workflow)
         addAgentMessage("已导出到: $exportedPath")
         appendWorkflowLog("导出工作流: ${workflow.name} -> $exportedPath")
+        testOutputArea.text = "导出成功：$exportedPath"
         initWorkflowFolders()
+    }
+
+
+    private fun buildWorkflowTestInput(workflow: Workflow): String {
+        if (workflow.variables.isEmpty()) {
+            return "{}"
+        }
+
+        val content = workflow.variables.entries.joinToString(",\n") { (name, variable) ->
+            val sampleValue = when (variable.type.lowercase()) {
+                "string" -> "\"sample_${name}\""
+                "int", "integer", "number" -> "0"
+                "bool", "boolean" -> "false"
+                "list", "array" -> "[]"
+                "object", "map" -> "{}"
+                else -> "null"
+            }
+            "  \"${name}\": ${sampleValue}"
+        }
+
+        return "{\n$content\n}"
     }
 
     private fun addUserMessage(message: String) {
