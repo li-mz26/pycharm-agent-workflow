@@ -89,10 +89,10 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
             }
 
             override fun mouseClicked(e: MouseEvent) {
-                // 双击打开代码文件
+                // 双击 code 节点打开 Python 文件
                 if (e.clickCount == 2 && SwingUtilities.isLeftMouseButton(e)) {
                     val node = findNodeAt(e.x, e.y)
-                    if (node != null) {
+                    if (node != null && node.type == "code") {
                         openNodeFileInEditor(node)
                     }
                 }
@@ -328,7 +328,7 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
         g.draw(path)
 
         // 箭头
-        drawArrow(g, end, target.position)
+        drawArrow(g, start, end)
 
         // 条件标签
         condition?.let {
@@ -349,9 +349,8 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
         }
     }
 
-    private fun drawArrow(g: Graphics2D, end: Point, targetPos: PositionDefinition) {
-        val angle = Math.atan2((targetPos.y + nodeSize.height/2 - end.y).toDouble(),
-                              (targetPos.x + nodeSize.width/2 - end.x).toDouble())
+    private fun drawArrow(g: Graphics2D, start: Point, end: Point) {
+        val angle = Math.atan2((end.y - start.y).toDouble(), (end.x - start.x).toDouble())
         val arrowLength = 12
         val arrowAngle = Math.PI / 6
 
@@ -467,8 +466,8 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
     }
 
     private fun getConnectionPoint(node: NodeDefinition, isOutput: Boolean): Point {
-        val x = node.position.x + if (isOutput) nodeSize.width else 0
-        val y = node.position.y + nodeSize.height / 2
+        val x = node.position.x + nodeSize.width / 2
+        val y = node.position.y + if (isOutput) nodeSize.height else 0
         return Point(x, y)
     }
 
@@ -518,17 +517,13 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
             return
         }
 
-        // 获取代码文件路径
-        val codeFilePath = when (node.type) {
-            "code" -> node.config.codeFile ?: "nodes/${node.id}.py"
-            "agent" -> node.config.promptFile ?: "nodes/${node.id}_prompt.md"
-            else -> null
-        }
-
-        if (codeFilePath == null) {
-            println("No file to open for node type: ${node.type}")
+        // 仅 code 节点支持双击打开 Python 文件
+        if (node.type != "code") {
             return
         }
+
+        // 获取代码文件路径
+        val codeFilePath = node.config.codeFile ?: "nodes/${node.id}.py"
 
         // 构建完整文件路径
         val file = File(baseDir, codeFilePath)
