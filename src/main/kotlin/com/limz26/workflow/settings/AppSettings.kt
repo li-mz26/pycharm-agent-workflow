@@ -17,7 +17,9 @@ class AppSettings : PersistentStateComponent<AppSettings.State> {
         var model: String = "gpt-4",
         var temperature: Double = 0.7,
         var workflowPath: String = "",  // 工作流文件夹路径，空则使用项目根目录
-        var autoDetectWorkflows: Boolean = true  // 自动检测工作流文件夹
+        var autoDetectWorkflows: Boolean = true,  // 自动检测工作流文件夹
+        var mcpServerEnabled: Boolean = true,
+        var mcpServerPort: Int = 8765
     )
 
     private var state = State()
@@ -51,6 +53,14 @@ class AppSettings : PersistentStateComponent<AppSettings.State> {
     var autoDetectWorkflows: Boolean
         get() = state.autoDetectWorkflows
         set(value) { state.autoDetectWorkflows = value }
+
+    var mcpServerEnabled: Boolean
+        get() = state.mcpServerEnabled
+        set(value) { state.mcpServerEnabled = value }
+
+    var mcpServerPort: Int
+        get() = state.mcpServerPort
+        set(value) { state.mcpServerPort = value }
     
     /**
      * 获取实际的工作流路径

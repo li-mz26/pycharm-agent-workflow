@@ -353,7 +353,7 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
             g.fillRoundRect(midX - textWidth/2 - 5, midY - textHeight/2 - 2, textWidth + 10, textHeight + 4, 8, 8)
 
             g.color = Color(230, 81, 0)
-            g.font = Font("Dialog", Font.BOLD, 11)
+            g.font = blockFont(Font.BOLD, 12)
             g.drawString(it, midX - textWidth/2, midY + textHeight/4)
         }
     }

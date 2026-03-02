@@ -20,6 +20,8 @@ class SettingsConfigurable : Configurable {
     private var modelField: JBTextField? = null
     private var workflowPathField: JBTextField? = null
     private var autoDetectCheckbox: JCheckBox? = null
+    private var mcpEnabledCheckbox: JCheckBox? = null
+    private var mcpPortField: JBTextField? = null
 
     override fun getDisplayName(): String = "Agent Workflow (LLM 配置)"
 
@@ -70,9 +72,22 @@ class SettingsConfigurable : Configurable {
         autoDetectCheckbox?.isSelected = settings.autoDetectWorkflows
         autoDetectCheckbox?.toolTipText = "自动在项目目录中查找工作流文件夹"
         panel?.add(autoDetectCheckbox!!, gbc)
+
+        gbc.gridx = 0; gbc.gridy = 5; gbc.gridwidth = 1; gbc.weightx = 0.0
+        panel?.add(JLabel("MCP 服务端口:"), gbc)
+        gbc.gridx = 1; gbc.weightx = 1.0
+        mcpPortField = JBTextField()
+        mcpPortField?.text = settings.mcpServerPort.toString()
+        mcpPortField?.toolTipText = "内置 MCP 服务端口"
+        panel?.add(mcpPortField!!, gbc)
+
+        gbc.gridx = 0; gbc.gridy = 6; gbc.gridwidth = 2; gbc.weightx = 1.0
+        mcpEnabledCheckbox = JCheckBox("启用内置 MCP 服务")
+        mcpEnabledCheckbox?.isSelected = settings.mcpServerEnabled
+        panel?.add(mcpEnabledCheckbox!!, gbc)
         
         // 说明文本
-        gbc.gridy = 5; gbc.weighty = 1.0
+        gbc.gridy = 7; gbc.weighty = 1.0
         gbc.anchor = GridBagConstraints.NORTH
         val noteLabel = JLabel("""
             <html>
@@ -95,7 +110,9 @@ class SettingsConfigurable : Configurable {
                apiEndpointField?.text != settings.apiEndpoint ||
                modelField?.text != settings.model ||
                workflowPathField?.text != settings.workflowPath ||
-               autoDetectCheckbox?.isSelected != settings.autoDetectWorkflows
+               autoDetectCheckbox?.isSelected != settings.autoDetectWorkflows ||
+               mcpEnabledCheckbox?.isSelected != settings.mcpServerEnabled ||
+               (mcpPortField?.text?.toIntOrNull() ?: settings.mcpServerPort) != settings.mcpServerPort
     }
 
     override fun apply() {
@@ -105,6 +122,8 @@ class SettingsConfigurable : Configurable {
         settings.model = modelField?.text ?: settings.model
         settings.workflowPath = workflowPathField?.text ?: ""
         settings.autoDetectWorkflows = autoDetectCheckbox?.isSelected ?: true
+        settings.mcpServerEnabled = mcpEnabledCheckbox?.isSelected ?: true
+        settings.mcpServerPort = (mcpPortField?.text?.toIntOrNull() ?: settings.mcpServerPort).coerceIn(1, 65535)
     }
 
     override fun reset() {
@@ -114,5 +133,7 @@ class SettingsConfigurable : Configurable {
         modelField?.text = settings.model
         workflowPathField?.text = settings.workflowPath
         autoDetectCheckbox?.isSelected = settings.autoDetectWorkflows
+        mcpEnabledCheckbox?.isSelected = settings.mcpServerEnabled
+        mcpPortField?.text = settings.mcpServerPort.toString()
     }
 }

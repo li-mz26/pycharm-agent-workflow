@@ -2,6 +2,7 @@ package com.limz26.workflow.ui
 
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.SimpleToolWindowPanel
 import com.intellij.ui.JBSplitter
 import com.intellij.ui.components.JBScrollPane
@@ -10,6 +11,7 @@ import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import com.limz26.workflow.agent.WorkflowAgent
 import com.limz26.workflow.agent.WorkflowContext
+import com.limz26.workflow.mcp.WorkflowMcpService
 import com.limz26.workflow.model.*
 import com.limz26.workflow.settings.AppSettings
 import com.limz26.workflow.util.WorkflowDetector
@@ -29,9 +31,14 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
 
     private val agent = WorkflowAgent()
     private val settings = service<AppSettings>()
+    private val mcpService = service<WorkflowMcpService>()
     private var currentWorkflow: Workflow? = null
     private var loadedWorkflows: List<LoadedWorkflow> = emptyList()
     private var selectedWorkflow: LoadedWorkflow? = null
+    private val mainSplitter = JBSplitter(false, 0.35f)
+    private var isChatCollapsed = false
+    private val mcpToggleButton = JButton("启用MCP")
+    private val chatToggleButton = JButton("隐藏对话")
 
     private val chatArea = JTextArea().apply {
         isEditable = false
@@ -53,15 +60,16 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     }
 
     private val canvas = WorkflowCanvas(project)
-    private val folderListModel = DefaultListModel<String>()
-    private val folderList = JList(folderListModel)
+    private val workflowComboModel = DefaultComboBoxModel<String>()
+    private val workflowCombo = JComboBox(workflowComboModel)
+    private val consoleWorkflowLabel = JLabel("workflow")
 
     // 可视化底部 console 面板
     private val testInputArea = JBTextArea().apply {
         lineWrap = true
         wrapStyleWord = true
         border = JBUI.Borders.empty(8)
-        font = Font("Microsoft YaHei", Font.BOLD, 13)
+        font = Font("Monospaced", Font.PLAIN, 12)
     }
 
     private val testOutputArea = JBTextArea().apply {
@@ -69,7 +77,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         lineWrap = true
         wrapStyleWord = true
         border = JBUI.Borders.empty(8)
-        font = Font("Microsoft YaHei", Font.BOLD, 13)
+        font = Font("Monospaced", Font.PLAIN, 12)
         background = UIUtil.getPanelBackground()
         foreground = UIUtil.getLabelForeground()
     }
@@ -79,7 +87,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         lineWrap = true
         wrapStyleWord = true
         border = JBUI.Borders.empty(8)
-        font = Font("Microsoft YaHei", Font.BOLD, 13)
+        font = Font("Monospaced", Font.PLAIN, 12)
         background = UIUtil.getPanelBackground()
         foreground = UIUtil.getLabelForeground()
     }
@@ -89,26 +97,43 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         val leftPanel = createLeftPanel()
         val canvasPanel = createCanvasPanel()
 
-        val splitter = JBSplitter(false, 0.35f)
-        splitter.firstComponent = leftPanel
-        splitter.secondComponent = canvasPanel
+        mainSplitter.firstComponent = leftPanel
+        mainSplitter.secondComponent = canvasPanel
 
-        setContent(splitter)
+        setContent(mainSplitter)
         showWelcomeMessage()
+        syncMcpButtonText()
+        if (settings.mcpServerEnabled) {
+            try {
+                mcpService.startServer(settings.mcpServerPort)
+                appendWorkflowLog("MCP 服务已启动: http://127.0.0.1:${settings.mcpServerPort}/mcp (transport=streamable_http)")
+            } catch (e: Exception) {
+                appendWorkflowLog("MCP 服务启动失败: ${e.message}")
+            }
+        }
     }
 
     private fun initWorkflowFolders() {
         loadedWorkflows = WorkflowDetector.detectWorkflowFolders(project)
-        updateFolderList()
+        updateWorkflowCombo()
     }
 
-    private fun updateFolderList() {
-        folderListModel.clear()
-        loadedWorkflows.forEach { workflow ->
-            folderListModel.addElement("✓ ${workflow.name}")
-        }
+    private fun updateWorkflowCombo() {
+        workflowComboModel.removeAllElements()
+        loadedWorkflows.forEach { wf -> workflowComboModel.addElement(wf.name) }
+
         if (loadedWorkflows.isEmpty()) {
-            folderListModel.addElement("(无工作流文件夹)")
+            workflowComboModel.addElement("(无工作流)")
+            workflowCombo.selectedIndex = 0
+            workflowCombo.isEnabled = false
+        } else {
+            workflowCombo.isEnabled = true
+            val currentName = selectedWorkflow?.name
+            val index = loadedWorkflows.indexOfFirst { it.name == currentName }
+            workflowCombo.selectedIndex = if (index >= 0) index else 0
+            if (selectedWorkflow == null && loadedWorkflows.isNotEmpty()) {
+                loadWorkflowFolder(loadedWorkflows.first())
+            }
         }
     }
 
@@ -127,34 +152,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     }
 
     private fun createLeftPanel(): JPanel {
-        val panel = JPanel(BorderLayout())
-
-        val listPanel = JPanel(BorderLayout())
-        listPanel.border = BorderFactory.createTitledBorder("工作流 (${loadedWorkflows.size})")
-
-        folderList.selectionMode = ListSelectionModel.SINGLE_SELECTION
-        folderList.addListSelectionListener { event ->
-            if (!event.valueIsAdjusting) {
-                val idx = folderList.selectedIndex
-                if (idx >= 0 && idx < loadedWorkflows.size) {
-                    loadWorkflowFolder(loadedWorkflows[idx])
-                }
-            }
-        }
-
-        listPanel.add(JBScrollPane(folderList), BorderLayout.CENTER)
-        listPanel.add(JButton("刷新").apply {
-            addActionListener { initWorkflowFolders() }
-        }, BorderLayout.SOUTH)
-
-        val chatPanel = createChatPanel()
-
-        val splitter = JBSplitter(true, 0.3f)
-        splitter.firstComponent = listPanel
-        splitter.secondComponent = chatPanel
-
-        panel.add(splitter, BorderLayout.CENTER)
-        return panel
+        return createChatPanel()
     }
 
     private fun loadWorkflowFolder(workflow: LoadedWorkflow) {
@@ -164,6 +162,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
 
         try {
             currentWorkflow = convertToWorkflow(workflow)
+            updateConsoleWorkflowTitle(currentWorkflow?.name)
             canvas.setWorkflow(workflow)
             addAgentMessage("已加载: ${workflow.name}\n节点数: ${workflow.definition.nodes.size}")
             appendWorkflowLog("加载完成: ${workflow.name}, 节点数=${workflow.definition.nodes.size}")
@@ -237,26 +236,116 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         val panel = JPanel(BorderLayout())
         panel.border = BorderFactory.createTitledBorder("工作流可视化")
 
+        val topBar = JPanel(BorderLayout())
+        topBar.border = JBUI.Borders.empty(4)
+        val selectorPanel = JPanel(BorderLayout(6, 0))
+        selectorPanel.add(JLabel("工作流"), BorderLayout.WEST)
+        workflowCombo.renderer = DefaultListCellRenderer()
+        workflowCombo.addActionListener {
+            val idx = workflowCombo.selectedIndex
+            if (idx >= 0 && idx < loadedWorkflows.size) {
+                loadWorkflowFolder(loadedWorkflows[idx])
+            }
+        }
+        selectorPanel.add(workflowCombo, BorderLayout.CENTER)
+        topBar.add(selectorPanel, BorderLayout.CENTER)
+
+        val rightActions = JPanel(BorderLayout(6, 0))
+        rightActions.add(JButton("刷新").apply { addActionListener { initWorkflowFolders() } }, BorderLayout.WEST)
+
+        val togglePanel = JPanel(BorderLayout(6, 0))
+        mcpToggleButton.addActionListener { onToggleMcpServer() }
+        chatToggleButton.addActionListener { onToggleChatPanel() }
+        togglePanel.add(mcpToggleButton, BorderLayout.WEST)
+        togglePanel.add(chatToggleButton, BorderLayout.EAST)
+
+        rightActions.add(togglePanel, BorderLayout.EAST)
+        topBar.add(rightActions, BorderLayout.EAST)
+
         val tabs = JTabbedPane()
-        tabs.addTab("测试输入（当前工作流）", JBScrollPane(testInputArea))
-        tabs.addTab("测试输出（当前工作流）", JBScrollPane(testOutputArea))
-        tabs.addTab("节点/工作流日志", JBScrollPane(workflowLogArea))
+        tabs.addTab("输入", JBScrollPane(testInputArea))
+        tabs.addTab("输出", JBScrollPane(testOutputArea))
+        tabs.addTab("日志", JBScrollPane(workflowLogArea))
 
         val consolePanel = JPanel(BorderLayout())
         consolePanel.preferredSize = Dimension(200, 220)
+
+        val runHeader = JPanel(BorderLayout())
+        runHeader.border = JBUI.Borders.empty(4, 8)
+        val runButton = JButton("▶ 运行").apply { addActionListener { onRunWorkflowTest() } }
+        runHeader.add(runButton, BorderLayout.WEST)
+        consoleWorkflowLabel.font = Font("Dialog", Font.BOLD, 13)
+        runHeader.add(consoleWorkflowLabel, BorderLayout.CENTER)
+
+        consolePanel.add(runHeader, BorderLayout.NORTH)
         consolePanel.add(tabs, BorderLayout.CENTER)
 
-        val runPanel = JPanel(BorderLayout())
-        runPanel.border = JBUI.Borders.empty(6)
-        runPanel.add(JButton("工作流测试运行").apply { addActionListener { onRunWorkflowTest() } }, BorderLayout.EAST)
-        consolePanel.add(runPanel, BorderLayout.SOUTH)
-
-        val splitter = JBSplitter(true, 0.70f)
+        val splitter = JBSplitter(true, 0.68f)
         splitter.firstComponent = canvas
         splitter.secondComponent = consolePanel
 
+        panel.add(topBar, BorderLayout.NORTH)
         panel.add(splitter, BorderLayout.CENTER)
         return panel
+    }
+
+    private fun onToggleMcpServer() {
+        if (mcpService.isRunning()) {
+            mcpService.stopServer()
+            settings.mcpServerEnabled = false
+            appendWorkflowLog("MCP 服务已停止")
+            syncMcpButtonText()
+            return
+        }
+
+        val input = Messages.showInputDialog(
+            project,
+            "请输入 MCP 服务端口（1-65535）",
+            "启用 MCP 服务",
+            Messages.getQuestionIcon(),
+            settings.mcpServerPort.toString(),
+            null
+        ) ?: return
+
+        val port = input.toIntOrNull()
+        if (port == null || port !in 1..65535) {
+            Messages.showErrorDialog(project, "端口号无效：$input", "MCP 启动失败")
+            return
+        }
+
+        try {
+            settings.mcpServerPort = port
+            settings.mcpServerEnabled = true
+            mcpService.startServer(port)
+            appendWorkflowLog("MCP 服务已启动: http://127.0.0.1:$port/mcp (transport=streamable_http)")
+            syncMcpButtonText()
+        } catch (e: Exception) {
+            Messages.showErrorDialog(project, "启动失败: ${e.message}", "MCP 启动失败")
+            appendWorkflowLog("MCP 服务启动失败: ${e.message}")
+            settings.mcpServerEnabled = false
+            syncMcpButtonText()
+        }
+    }
+
+    private fun syncMcpButtonText() {
+        mcpToggleButton.text = if (mcpService.isRunning()) "关闭MCP" else "启用MCP"
+    }
+
+    private fun onToggleChatPanel() {
+        isChatCollapsed = !isChatCollapsed
+        if (isChatCollapsed) {
+            mainSplitter.firstComponent = JPanel()
+            mainSplitter.proportion = 0.0f
+            mainSplitter.dividerWidth = 0
+            chatToggleButton.text = "展开对话"
+        } else {
+            mainSplitter.firstComponent = createLeftPanel()
+            mainSplitter.proportion = 0.35f
+            mainSplitter.dividerWidth = 7
+            chatToggleButton.text = "隐藏对话"
+        }
+        mainSplitter.revalidate()
+        mainSplitter.repaint()
     }
 
     private fun onSend() {
@@ -281,6 +370,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
 
                     response.workflow?.let { workflow ->
                         currentWorkflow = workflow
+                        updateConsoleWorkflowTitle(workflow.name)
                         canvas.setWorkflow(workflow)
                         appendWorkflowLog("工作流更新: ${workflow.name}, 节点数=${workflow.nodes.size}")
                         testInputArea.text = buildWorkflowTestInput(workflow)
@@ -325,7 +415,6 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         testOutputArea.text = "导出成功：$exportedPath"
         initWorkflowFolders()
     }
-
 
     private fun onRunWorkflowTest() {
         val workflow = currentWorkflow
@@ -382,6 +471,10 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         }
 
         return "{\n$content\n}"
+    }
+
+    private fun updateConsoleWorkflowTitle(name: String?) {
+        consoleWorkflowLabel.text = name ?: "workflow"
     }
 
     private fun addUserMessage(message: String) {
