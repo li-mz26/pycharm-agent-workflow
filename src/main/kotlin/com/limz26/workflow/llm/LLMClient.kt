@@ -6,7 +6,9 @@ import kotlinx.serialization.json.*
 import java.net.ConnectException
 import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
+import java.net.URI
 import java.net.URL
+import javax.net.ssl.SSLException
 
 /**
  * LLM 客户端 - 支持多 Provider
@@ -120,6 +122,11 @@ class LLMClient {
                 "请求大模型服务超时。endpoint=$endpoint；请检查网络延迟或服务端负载。原始错误: ${e.message}",
                 e
             )
+        } catch (e: SSLException) {
+            throw IllegalStateException(
+                "TLS/SSL 握手失败。endpoint=$endpoint；如果你连接的是本地 OpenAI 兼容服务（如 localhost/127.0.0.1），请把 API Endpoint 改为 http://... 而不是 https://...。原始错误: ${e.message}",
+                e
+            )
         } catch (e: Exception) {
             throw IllegalStateException("调用大模型服务失败。endpoint=$endpoint；原始错误: ${e.message}", e)
         } finally {
@@ -144,18 +151,34 @@ class LLMClient {
 
 
     private fun buildChatCompletionsEndpoint(rawEndpoint: String): String {
-        val normalized = rawEndpoint.trim().removeSuffix("/")
-        val withScheme = if (normalized.startsWith("http://") || normalized.startsWith("https://")) {
-            normalized
+        val cleaned = rawEndpoint.trim().removeSuffix("/")
+        require(cleaned.isNotEmpty()) { "API Endpoint 不能为空" }
+
+        val withScheme = if (cleaned.startsWith("http://") || cleaned.startsWith("https://")) {
+            cleaned
         } else {
-            "https://$normalized"
+            val host = cleaned.substringBefore('/').lowercase()
+            val useHttp = host == "localhost" || host.startsWith("127.") ||
+                host.startsWith("10.") || host.startsWith("192.168.") ||
+                host.matches(Regex("172\\.(1[6-9]|2[0-9]|3[0-1])\\..*"))
+            if (useHttp) "http://$cleaned" else "https://$cleaned"
         }
 
-        return if (withScheme.endsWith("/chat/completions")) {
-            withScheme
-        } else {
-            "$withScheme/chat/completions"
+        if (withScheme.endsWith("/chat/completions")) return withScheme
+
+        val uri = URI(withScheme)
+        val path = (uri.path ?: "").trimEnd('/')
+
+        val finalPath = when {
+            path.endsWith("/chat/completions") -> path
+            path.isEmpty() -> "/v1/chat/completions"
+            path.endsWith("/v1") -> "$path/chat/completions"
+            else -> "$path/chat/completions"
         }
+
+        val queryPart = if (uri.query.isNullOrBlank()) "" else "?${uri.query}"
+        val portPart = if (uri.port == -1) "" else ":${uri.port}"
+        return "${uri.scheme}://${uri.host}$portPart$finalPath$queryPart"
     }
 
     private fun parseOpenAIResponse(json: String): String {
