@@ -32,6 +32,8 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     private var currentWorkflow: Workflow? = null
     private var loadedWorkflows: List<LoadedWorkflow> = emptyList()
     private var selectedWorkflow: LoadedWorkflow? = null
+    private val mainSplitter = JBSplitter(false, 0.35f)
+    private var isChatCollapsed = false
 
     private val chatArea = JTextArea().apply {
         isEditable = false
@@ -90,11 +92,10 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         val leftPanel = createLeftPanel()
         val canvasPanel = createCanvasPanel()
 
-        val splitter = JBSplitter(false, 0.35f)
-        splitter.firstComponent = leftPanel
-        splitter.secondComponent = canvasPanel
+        mainSplitter.firstComponent = leftPanel
+        mainSplitter.secondComponent = canvasPanel
 
-        setContent(splitter)
+        setContent(mainSplitter)
         showWelcomeMessage()
     }
 
@@ -234,7 +235,22 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         }
         selectorPanel.add(workflowCombo, BorderLayout.CENTER)
         topBar.add(selectorPanel, BorderLayout.CENTER)
-        topBar.add(JButton("刷新").apply { addActionListener { initWorkflowFolders() } }, BorderLayout.EAST)
+
+        val rightActions = JPanel(BorderLayout(6, 0))
+        rightActions.add(JButton("刷新").apply { addActionListener { initWorkflowFolders() } }, BorderLayout.WEST)
+        rightActions.add(JButton("隐藏对话").apply {
+            addActionListener {
+                isChatCollapsed = !isChatCollapsed
+                if (isChatCollapsed) {
+                    mainSplitter.proportion = 0.0f
+                    text = "展开对话"
+                } else {
+                    mainSplitter.proportion = 0.35f
+                    text = "隐藏对话"
+                }
+            }
+        }, BorderLayout.EAST)
+        topBar.add(rightActions, BorderLayout.EAST)
 
         val tabs = JTabbedPane()
         tabs.addTab("输入", JBScrollPane(testInputArea))

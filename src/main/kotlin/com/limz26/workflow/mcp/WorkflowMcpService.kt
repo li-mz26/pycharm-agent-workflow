@@ -3,8 +3,10 @@ package com.limz26.workflow.mcp
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.service
 import com.limz26.workflow.agent.WorkflowAgent
 import com.limz26.workflow.model.*
+import com.limz26.workflow.settings.AppSettings
 import java.io.File
 import java.util.UUID
 
@@ -38,6 +40,16 @@ class WorkflowMcpService {
         val logs: List<String>,
         val validationErrors: List<String> = emptyList()
     )
+
+    data class McpServerConfig(
+        val enabled: Boolean,
+        val port: Int
+    )
+
+    fun getServerConfig(): McpServerConfig {
+        val settings = service<AppSettings>()
+        return McpServerConfig(settings.mcpServerEnabled, settings.mcpServerPort)
+    }
 
     fun listWorkflows(projectBasePath: String): List<WorkflowSummary> {
         val loader = WorkflowLoader()
