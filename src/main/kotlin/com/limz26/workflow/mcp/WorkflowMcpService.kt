@@ -2,6 +2,9 @@ package com.limz26.workflow.mcp
 
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
+import com.google.gson.JsonElement
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.limz26.workflow.agent.WorkflowAgent
@@ -55,6 +58,8 @@ class WorkflowMcpService {
         val protocol: String = "streamable_http"
     )
 
+    data class McpRpcError(val code: Int, val message: String)
+
     fun getServerConfig(): McpServerConfig {
         val settings = service<AppSettings>()
         return McpServerConfig(settings.mcpServerEnabled, settings.mcpServerPort)
@@ -92,6 +97,16 @@ class WorkflowMcpService {
             val method = exchange.requestMethod.uppercase()
             val path = exchange.requestURI.path
             val query = parseQuery(exchange.requestURI.rawQuery)
+
+            if (method == "OPTIONS") {
+                sendEmpty(exchange, 204)
+                return
+            }
+
+            if (method == "POST" && path == "/mcp") {
+                handleRpcCall(exchange)
+                return
+            }
 
             val result: Any = when {
                 method == "GET" && path == "/mcp" -> mapOf(
@@ -151,9 +166,142 @@ class WorkflowMcpService {
 
     private fun sendJson(exchange: HttpExchange, status: Int, payload: Any) {
         val bytes = gson.toJson(payload).toByteArray(StandardCharsets.UTF_8)
+        addCorsHeaders(exchange)
         exchange.responseHeaders.add("Content-Type", "application/json; charset=utf-8")
         exchange.sendResponseHeaders(status, bytes.size.toLong())
         exchange.responseBody.use { it.write(bytes) }
+    }
+
+    private fun sendEmpty(exchange: HttpExchange, status: Int) {
+        addCorsHeaders(exchange)
+        exchange.sendResponseHeaders(status, -1)
+        exchange.close()
+    }
+
+    private fun addCorsHeaders(exchange: HttpExchange) {
+        exchange.responseHeaders.add("Access-Control-Allow-Origin", "*")
+        exchange.responseHeaders.add("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        exchange.responseHeaders.add("Access-Control-Allow-Headers", "Content-Type, Authorization, Mcp-Session-Id")
+    }
+
+    private fun handleRpcCall(exchange: HttpExchange) {
+        try {
+            val body = readBody(exchange)
+            val request = JsonParser.parseString(body).asJsonObject
+            val id = request.get("id")
+            val method = request.get("method")?.asString ?: throw IllegalArgumentException("Missing method")
+            val params = request.getAsJsonObject("params") ?: JsonObject()
+
+            val result = when (method) {
+                "initialize" -> mapOf(
+                    "protocolVersion" to "2024-11-05",
+                    "capabilities" to mapOf("tools" to mapOf("listChanged" to false)),
+                    "serverInfo" to mapOf("name" to "workflow-mcp", "version" to "1.0.0")
+                )
+
+                "tools/list" -> mapOf("tools" to buildToolDescriptors())
+
+                "tools/call" -> {
+                    val toolName = params.get("name")?.asString ?: throw IllegalArgumentException("Missing tool name")
+                    val arguments = params.getAsJsonObject("arguments") ?: JsonObject()
+                    callTool(toolName, arguments)
+                }
+
+                "ping" -> mapOf("ok" to true)
+
+                else -> throw IllegalArgumentException("Unsupported MCP method: $method")
+            }
+
+            val response = mutableMapOf<String, Any>(
+                "jsonrpc" to "2.0",
+                "result" to result
+            )
+            if (id != null && !id.isJsonNull) {
+                response["id"] = gson.fromJson(id, Any::class.java)
+            }
+            sendJson(exchange, 200, response)
+        } catch (e: Exception) {
+            val error = mapOf(
+                "jsonrpc" to "2.0",
+                "error" to McpRpcError(-32603, e.message ?: "internal error")
+            )
+            sendJson(exchange, 200, error)
+        }
+    }
+
+    private fun buildToolDescriptors(): List<Map<String, Any>> = listOf(
+        toolDescriptor("workflows_list", "查询项目下工作流列表", mapOf("type" to "object", "properties" to mapOf(
+            "projectBasePath" to mapOf("type" to "string")
+        ), "required" to listOf("projectBasePath"))),
+        toolDescriptor("workflow_read_json", "读取指定工作流 json", mapOf("type" to "object", "properties" to mapOf(
+            "workflowDirPath" to mapOf("type" to "string")
+        ), "required" to listOf("workflowDirPath"))),
+        toolDescriptor("workflow_read_node_code", "读取指定节点代码文件", mapOf("type" to "object", "properties" to mapOf(
+            "workflowDirPath" to mapOf("type" to "string"),
+            "nodeId" to mapOf("type" to "string")
+        ), "required" to listOf("workflowDirPath", "nodeId"))),
+        toolDescriptor("workflow_edit", "编辑工作流（节点/边/代码/prompt）", mapOf("type" to "object", "properties" to mapOf(
+            "workflowDirPath" to mapOf("type" to "string"),
+            "request" to mapOf("type" to "object")
+        ), "required" to listOf("workflowDirPath", "request"))),
+        toolDescriptor("workflow_run", "运行工作流并返回日志", mapOf("type" to "object", "properties" to mapOf(
+            "workflowDirPath" to mapOf("type" to "string")
+        ), "required" to listOf("workflowDirPath")))
+    )
+
+    private fun toolDescriptor(name: String, description: String, inputSchema: Map<String, Any>) = mapOf(
+        "name" to name,
+        "description" to description,
+        "inputSchema" to inputSchema
+    )
+
+    private fun callTool(name: String, arguments: JsonObject): Map<String, Any> {
+        val payload: Any = when (name) {
+            "workflows_list" -> {
+                val base = arguments.requireString("projectBasePath")
+                listWorkflows(base)
+            }
+
+            "workflow_read_json" -> {
+                val dir = arguments.requireString("workflowDirPath")
+                mapOf("workflowJson" to readWorkflowJson(dir))
+            }
+
+            "workflow_read_node_code" -> {
+                val dir = arguments.requireString("workflowDirPath")
+                val nodeId = arguments.requireString("nodeId")
+                mapOf("code" to readNodeCodeFile(dir, nodeId))
+            }
+
+            "workflow_edit" -> {
+                val dir = arguments.requireString("workflowDirPath")
+                val requestObj = arguments.getAsJsonObject("request") ?: throw IllegalArgumentException("Missing request")
+                val request = gson.fromJson(requestObj, WorkflowEditRequest::class.java)
+                mapOf("workflowJson" to editWorkflow(dir, request))
+            }
+
+            "workflow_run" -> {
+                val dir = arguments.requireString("workflowDirPath")
+                runWorkflow(dir)
+            }
+
+            else -> throw IllegalArgumentException("Unknown tool: $name")
+        }
+
+        return mapOf(
+            "content" to listOf(
+                mapOf(
+                    "type" to "text",
+                    "text" to gson.toJson(payload)
+                )
+            )
+        )
+    }
+
+    private fun JsonObject.requireString(key: String): String {
+        val value: JsonElement = this.get(key) ?: throw IllegalArgumentException("Missing $key")
+        if (!value.isJsonPrimitive) throw IllegalArgumentException("$key must be string")
+        return value.asString
     }
 
     private fun readBody(exchange: HttpExchange): String {
