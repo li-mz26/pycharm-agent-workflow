@@ -105,7 +105,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
 
     private fun updateWorkflowCombo() {
         workflowComboModel.removeAllElements()
-        loadedWorkflows.forEach { workflowComboModel.addElement(workflow.name) }
+        loadedWorkflows.forEach { wf -> workflowComboModel.addElement(wf.name) }
 
         if (loadedWorkflows.isEmpty()) {
             workflowComboModel.addElement("(无工作流)")
