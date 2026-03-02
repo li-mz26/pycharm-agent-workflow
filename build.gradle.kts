@@ -61,6 +61,7 @@ tasks {
 
     // Ensure external runtime dependencies are copied into plugin sandbox/lib to avoid PluginClassLoader CNFEs.
     withType<PrepareSandboxTask> {
+        duplicatesStrategy = DuplicatesStrategy.INCLUDE
         from(configurations.runtimeClasspath) {
             into("${intellij.pluginName.get()}/lib")
         }
