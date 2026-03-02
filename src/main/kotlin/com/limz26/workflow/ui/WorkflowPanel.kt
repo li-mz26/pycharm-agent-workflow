@@ -45,7 +45,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         lineWrap = true
         wrapStyleWord = true
         border = JBUI.Borders.empty(10)
-        font = Font("Monospaced", Font.PLAIN, 13)
+        font = Font("Microsoft YaHei", Font.BOLD, 14)
         background = UIUtil.getPanelBackground()
         foreground = UIUtil.getLabelForeground()
     }
@@ -54,7 +54,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         lineWrap = true
         wrapStyleWord = true
         border = JBUI.Borders.empty(8)
-        font = font.deriveFont(14f)
+        font = Font("Microsoft YaHei", Font.BOLD, 14)
         background = UIUtil.getTextFieldBackground()
         foreground = UIUtil.getTextFieldForeground()
     }

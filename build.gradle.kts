@@ -66,6 +66,12 @@ tasks {
         }
     }
 
+
+    // Workaround: avoid flaky online self-version check in restricted networks
+    withType<org.jetbrains.intellij.tasks.InitializeIntelliJPluginTask> {
+        enabled = false
+    }
+
     patchPluginXml {
         sinceBuild.set("241")
         untilBuild.set("251.*")
