@@ -25,6 +25,8 @@ import java.util.concurrent.ConcurrentHashMap
 @Service
 class WorkflowMcpService {
 
+    private val supportedProtocolVersions = setOf("2024-11-05", "2024-10-07")
+
     private val gson: Gson = GsonBuilder().setPrettyPrinting().create()
 
     @Volatile
@@ -203,12 +205,18 @@ class WorkflowMcpService {
         }
 
         val sessionHeader = exchange.requestHeaders.getFirst("Mcp-Session-Id")
+            ?: exchange.requestHeaders.getFirst("mcp-session-id")
         val params = request.getAsJsonObject("params") ?: JsonObject()
 
         if (method == "initialize") {
             val sessionId = UUID.randomUUID().toString()
             sessions.add(sessionId)
-            val protocolVersion = params.get("protocolVersion")?.asString ?: "2024-11-05"
+            val requestedProtocolVersion = params.get("protocolVersion")?.asString ?: "2024-11-05"
+            val protocolVersion = if (supportedProtocolVersions.contains(requestedProtocolVersion)) {
+                requestedProtocolVersion
+            } else {
+                "2024-11-05"
+            }
             val result = mapOf(
                 "protocolVersion" to protocolVersion,
                 "capabilities" to mapOf(
@@ -228,7 +236,7 @@ class WorkflowMcpService {
 
         try {
             when (method) {
-                "initialized" -> {
+                "initialized", "notifications/initialized" -> {
                     // notification, no response body needed
                     sendEmpty(exchange, 202)
                 }
