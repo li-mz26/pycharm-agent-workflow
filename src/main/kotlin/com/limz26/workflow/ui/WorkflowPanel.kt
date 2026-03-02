@@ -13,10 +13,12 @@ import com.limz26.workflow.agent.WorkflowContext
 import com.limz26.workflow.model.*
 import com.limz26.workflow.settings.AppSettings
 import com.limz26.workflow.util.WorkflowDetector
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import java.awt.BorderLayout
-import java.awt.Color
 import java.awt.Dimension
 import java.awt.Font
+import java.time.LocalTime
 import javax.swing.*
 import javax.swing.border.MatteBorder
 
@@ -24,14 +26,13 @@ import javax.swing.border.MatteBorder
  * 主工作流面板 - 对话 + 可视化
  */
 class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false, true) {
-    
+
     private val agent = WorkflowAgent()
     private val settings = service<AppSettings>()
     private var currentWorkflow: Workflow? = null
     private var loadedWorkflows: List<LoadedWorkflow> = emptyList()
     private var selectedWorkflow: LoadedWorkflow? = null
-    
-    // 使用 IDE 主题背景色
+
     private val chatArea = JTextArea().apply {
         isEditable = false
         lineWrap = true
@@ -41,7 +42,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         background = UIUtil.getPanelBackground()
         foreground = UIUtil.getLabelForeground()
     }
-    
+
     private val inputField = JBTextArea(3, 40).apply {
         lineWrap = true
         wrapStyleWord = true
@@ -50,29 +51,59 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         background = UIUtil.getTextFieldBackground()
         foreground = UIUtil.getTextFieldForeground()
     }
-    
+
     private val canvas = WorkflowCanvas(project)
     private val folderListModel = DefaultListModel<String>()
     private val folderList = JList(folderListModel)
-    
+
+    private val consoleWorkflowLabel = JLabel("workflow")
+
+    // 可视化底部 console 面板
+    private val testInputArea = JBTextArea().apply {
+        lineWrap = true
+        wrapStyleWord = true
+        border = JBUI.Borders.empty(8)
+        font = Font("Monospaced", Font.PLAIN, 12)
+    }
+
+    private val testOutputArea = JBTextArea().apply {
+        isEditable = false
+        lineWrap = true
+        wrapStyleWord = true
+        border = JBUI.Borders.empty(8)
+        font = Font("Monospaced", Font.PLAIN, 12)
+        background = UIUtil.getPanelBackground()
+        foreground = UIUtil.getLabelForeground()
+    }
+
+    private val workflowLogArea = JBTextArea().apply {
+        isEditable = false
+        lineWrap = true
+        wrapStyleWord = true
+        border = JBUI.Borders.empty(8)
+        font = Font("Monospaced", Font.PLAIN, 12)
+        background = UIUtil.getPanelBackground()
+        foreground = UIUtil.getLabelForeground()
+    }
+
     init {
         initWorkflowFolders()
         val leftPanel = createLeftPanel()
         val canvasPanel = createCanvasPanel()
-        
+
         val splitter = JBSplitter(false, 0.35f)
         splitter.firstComponent = leftPanel
         splitter.secondComponent = canvasPanel
-        
+
         setContent(splitter)
         showWelcomeMessage()
     }
-    
+
     private fun initWorkflowFolders() {
         loadedWorkflows = WorkflowDetector.detectWorkflowFolders(project)
         updateFolderList()
     }
-    
+
     private fun updateFolderList() {
         folderListModel.clear()
         loadedWorkflows.forEach { workflow ->
@@ -82,11 +113,11 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
             folderListModel.addElement("(无工作流文件夹)")
         }
     }
-    
+
     private fun showWelcomeMessage() {
         val folderCount = loadedWorkflows.size
         val apiStatus = if (settings.apiKey.isBlank()) "未配置" else "已配置"
-        
+
         chatArea.append("═══ Agent Workflow 助手 ═══\n\n")
         chatArea.append("用自然语言描述你的工作流，我来帮你生成\n\n")
         chatArea.append("📁 工作流文件夹: $folderCount 个\n")
@@ -96,14 +127,13 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         chatArea.append("• 帮我做一个审批流程\n\n")
         chatArea.append("═══════════════════════\n\n")
     }
-    
+
     private fun createLeftPanel(): JPanel {
         val panel = JPanel(BorderLayout())
-        
-        // 工作流文件夹列表
+
         val listPanel = JPanel(BorderLayout())
         listPanel.border = BorderFactory.createTitledBorder("工作流 (${loadedWorkflows.size})")
-        
+
         folderList.selectionMode = ListSelectionModel.SINGLE_SELECTION
         folderList.addListSelectionListener { event ->
             if (!event.valueIsAdjusting) {
@@ -113,41 +143,44 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
                 }
             }
         }
-        
+
         listPanel.add(JBScrollPane(folderList), BorderLayout.CENTER)
         listPanel.add(JButton("刷新").apply {
             addActionListener { initWorkflowFolders() }
         }, BorderLayout.SOUTH)
-        
-        // 对话面板 - 带分隔线
+
         val chatPanel = createChatPanel()
-        
-        // 分割面板
+
         val splitter = JBSplitter(true, 0.3f)
         splitter.firstComponent = listPanel
         splitter.secondComponent = chatPanel
-        
+
         panel.add(splitter, BorderLayout.CENTER)
         return panel
     }
-    
+
     private fun loadWorkflowFolder(workflow: LoadedWorkflow) {
         selectedWorkflow = workflow
         addSystemMessage("加载工作流: ${workflow.name}")
-        
+        appendWorkflowLog("加载工作流: ${workflow.name}")
+
         try {
-            // 转换为 Workflow 对象并显示
             currentWorkflow = convertToWorkflow(workflow)
-            canvas.setWorkflow(currentWorkflow!!)
+            updateConsoleWorkflowTitle(currentWorkflow?.name)
+            canvas.setWorkflow(workflow)
             addAgentMessage("已加载: ${workflow.name}\n节点数: ${workflow.definition.nodes.size}")
+            appendWorkflowLog("加载完成: ${workflow.name}, 节点数=${workflow.definition.nodes.size}")
+            testInputArea.text = buildWorkflowTestInput(currentWorkflow!!)
+            testOutputArea.text = "已加载工作流，可在此查看执行输出或验证结果。"
         } catch (e: Exception) {
             addErrorMessage("加载失败: ${e.message}")
+            appendWorkflowLog("加载失败: ${e.message}")
         }
     }
-    
+
     private fun convertToWorkflow(loaded: LoadedWorkflow): Workflow {
         val def = loaded.definition
-        
+
         return Workflow(
             name = def.name,
             description = def.description,
@@ -156,10 +189,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
                     id = nodeDef.id,
                     type = NodeType.valueOf(nodeDef.type.uppercase()),
                     name = nodeDef.name,
-                    position = Position(
-                        x = nodeDef.position.x,
-                        y = nodeDef.position.y
-                    ),
+                    position = Position(nodeDef.position.x, nodeDef.position.y),
                     config = NodeConfig(
                         code = nodeDef.config.code,
                         prompt = nodeDef.config.prompt,
@@ -169,185 +199,240 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
                     )
                 )
             },
-            edges = def.edges.map { edgeDef ->
-                WorkflowEdge(
-                    source = edgeDef.source,
-                    target = edgeDef.target
-                )
-            },
+            edges = def.edges.map { WorkflowEdge(source = it.source, target = it.target) },
             variables = def.variables.mapValues { Variable(it.key, it.value.type) }
         )
     }
-    
+
     private fun createChatPanel(): JPanel {
-        val panel = JPanel(BorderLayout())
-        panel.border = BorderFactory.createTitledBorder("对话")
-        
-        // 聊天区域
-        panel.add(JBScrollPane(chatArea), BorderLayout.CENTER)
-        
-        // 分隔线
-        val separator = JSeparator(JSeparator.HORIZONTAL)
-        separator.foreground = UIUtil.getLabelDisabledForeground()
-        separator.preferredSize = Dimension(separator.preferredSize.width, 2)
-        panel.add(separator, BorderLayout.SOUTH)
-        
-        // 输入区域面板
-        val inputWrapper = JPanel(BorderLayout())
-        inputWrapper.border = JBUI.Borders.empty(5)
-        
-        // 输入框
-        inputWrapper.add(JBScrollPane(inputField), BorderLayout.CENTER)
-        
-        // 按钮面板
-        val buttonPanel = JPanel()
-        buttonPanel.add(JButton("发送").apply { addActionListener { onSend() } })
-        buttonPanel.add(JButton("验证").apply { addActionListener { onValidate() } })
-        buttonPanel.add(JButton("导出").apply { addActionListener { onExport() } })
-        inputWrapper.add(buttonPanel, BorderLayout.SOUTH)
-        
-        // 将输入区域放在分隔线下方
-        val bottomPanel = JPanel(BorderLayout())
-        bottomPanel.add(inputWrapper, BorderLayout.CENTER)
-        
-        // 使用分割面板实现上下布局
-        val fullPanel = JPanel(BorderLayout())
-        fullPanel.add(panel, BorderLayout.CENTER)
-        fullPanel.add(bottomPanel, BorderLayout.SOUTH)
-        
-        // 重新组织：聊天记录在上，分隔线，输入在下
         val mainPanel = JPanel(BorderLayout())
-        
-        // 上部：聊天记录（带标题边框）
+
         val chatAreaPanel = JPanel(BorderLayout())
         chatAreaPanel.border = BorderFactory.createTitledBorder("对话历史")
         chatAreaPanel.add(JBScrollPane(chatArea), BorderLayout.CENTER)
-        
-        // 下部：输入区域
+
         val inputPanel = JPanel(BorderLayout())
-        inputPanel.border = JBUI.Borders.empty(5)
-        
-        // 添加分隔线到输入面板顶部
         val topBorder = MatteBorder(2, 0, 0, 0, UIUtil.getLabelDisabledForeground())
         inputPanel.border = BorderFactory.createCompoundBorder(
             topBorder,
             JBUI.Borders.empty(10)
         )
-        
+
         inputPanel.add(JBScrollPane(inputField), BorderLayout.CENTER)
-        
+
         val btnPanel = JPanel()
         btnPanel.add(JButton("发送").apply { addActionListener { onSend() } })
         btnPanel.add(JButton("验证").apply { addActionListener { onValidate() } })
         btnPanel.add(JButton("导出").apply { addActionListener { onExport() } })
         inputPanel.add(btnPanel, BorderLayout.SOUTH)
-        
-        // 分割面板
+
         val splitter = JSplitPane(JSplitPane.VERTICAL_SPLIT)
         splitter.topComponent = chatAreaPanel
         splitter.bottomComponent = inputPanel
-        splitter.resizeWeight = 0.75  // 聊天记录占 75%
+        splitter.resizeWeight = 0.75
         splitter.dividerSize = 2
-        
+
         mainPanel.add(splitter, BorderLayout.CENTER)
-        
         return mainPanel
     }
-    
+
     private fun createCanvasPanel(): JPanel {
         val panel = JPanel(BorderLayout())
         panel.border = BorderFactory.createTitledBorder("工作流可视化")
-        panel.add(canvas, BorderLayout.CENTER)
+
+        val tabs = JTabbedPane()
+        tabs.addTab("输入", JBScrollPane(testInputArea))
+        tabs.addTab("输出", JBScrollPane(testOutputArea))
+        tabs.addTab("日志", JBScrollPane(workflowLogArea))
+
+        val consolePanel = JPanel(BorderLayout())
+        consolePanel.preferredSize = Dimension(200, 220)
+
+        val runHeader = JPanel(BorderLayout())
+        runHeader.border = JBUI.Borders.empty(4, 8)
+        val runButton = JButton("▶ 运行").apply { addActionListener { onRunWorkflowTest() } }
+        runHeader.add(runButton, BorderLayout.WEST)
+        consoleWorkflowLabel.font = Font("Dialog", Font.BOLD, 13)
+        runHeader.add(consoleWorkflowLabel, BorderLayout.CENTER)
+
+        consolePanel.add(runHeader, BorderLayout.NORTH)
+        consolePanel.add(tabs, BorderLayout.CENTER)
+
+        val splitter = JBSplitter(true, 0.70f)
+        splitter.firstComponent = canvas
+        splitter.secondComponent = consolePanel
+
+        panel.add(splitter, BorderLayout.CENTER)
         return panel
     }
-    
+
     private fun onSend() {
         val text = inputField.text.trim()
         if (text.isEmpty()) return
-        
+
         addUserMessage(text)
         inputField.text = ""
-        addSystemMessage("生成中...")
-        
-        object : SwingWorker<Workflow, Void>() {
-            override fun doInBackground(): Workflow {
-                return agent.generateWorkflow(text, WorkflowContext(currentWorkflow))
+        addSystemMessage("思考中...")
+        appendWorkflowLog("收到对话请求: ${text.take(80)}")
+
+        object : SwingWorker<WorkflowAgent.AgentResponse, Void>() {
+            override fun doInBackground(): WorkflowAgent.AgentResponse {
+                return agent.talk(text, WorkflowContext(currentWorkflow))
             }
-            
+
             override fun done() {
                 try {
-                    val workflow = get()
-                    currentWorkflow = workflow
+                    val response = get()
                     removeLastSystemMessage()
-                    
-                    if (workflow.name == "错误") {
-                        addErrorMessage(workflow.description)
-                    } else {
-                        addAgentMessage("已生成工作流: ${workflow.name}")
+                    addAgentMessage(response.reply)
+
+                    response.workflow?.let { workflow ->
+                        currentWorkflow = workflow
+                        updateConsoleWorkflowTitle(workflow.name)
                         canvas.setWorkflow(workflow)
+                        appendWorkflowLog("工作流更新: ${workflow.name}, 节点数=${workflow.nodes.size}")
+                        testInputArea.text = buildWorkflowTestInput(workflow)
+                        testOutputArea.text = "工作流已更新，等待执行测试。"
                     }
                 } catch (e: Exception) {
                     removeLastSystemMessage()
                     addErrorMessage("错误: ${e.message}")
+                    appendWorkflowLog("对话异常: ${e.message}")
                 }
             }
         }.execute()
     }
-    
+
     private fun onValidate() {
         val workflow = currentWorkflow
         if (workflow == null) {
             addAgentMessage("还没有工作流")
             return
         }
-        
+
         val result = agent.validateWorkflow(workflow)
         if (result.isValid) {
             addAgentMessage("验证通过!")
+            appendWorkflowLog("验证通过: ${workflow.name}")
+            testOutputArea.text = "验证通过：${workflow.name}"
         } else {
-            addErrorMessage("问题: ${result.errors.joinToString(", ")}")
+            val errorText = result.errors.joinToString(", ")
+            addErrorMessage("问题: $errorText")
+            appendWorkflowLog("验证失败: $errorText")
+            testOutputArea.text = "验证失败：$errorText"
         }
     }
-    
+
     private fun onExport() {
         val workflow = currentWorkflow ?: return addAgentMessage("没有可导出的工作流")
         val path = selectedWorkflow?.baseDir?.absolutePath ?: project.basePath ?: "."
         val exporter = WorkflowExporter(path)
         val exportedPath = exporter.export(workflow)
         addAgentMessage("已导出到: $exportedPath")
+        appendWorkflowLog("导出工作流: ${workflow.name} -> $exportedPath")
+        testOutputArea.text = "导出成功：$exportedPath"
         initWorkflowFolders()
     }
-    
+
+
+    private fun onRunWorkflowTest() {
+        val workflow = currentWorkflow
+        if (workflow == null) {
+            addAgentMessage("请先加载或生成一个工作流")
+            return
+        }
+
+        val rawInput = testInputArea.text.trim().ifEmpty { "{}" }
+        val parsedInput = try {
+            Json.parseToJsonElement(rawInput).jsonObject
+        } catch (e: Exception) {
+            testOutputArea.text = "测试输入 JSON 格式错误：${e.message}"
+            appendWorkflowLog("测试运行失败：输入 JSON 格式错误")
+            return
+        }
+
+        val missingVars = workflow.variables.keys.filterNot { parsedInput.containsKey(it) }
+        val lines = mutableListOf<String>()
+        lines += "工作流：${workflow.name}"
+        lines += "节点数：${workflow.nodes.size}，连线数：${workflow.edges.size}"
+        lines += "输入字段：${parsedInput.keys.joinToString(", ").ifBlank { "(空)" }}"
+
+        if (missingVars.isNotEmpty()) {
+            lines += "缺失变量：${missingVars.joinToString(", ")}"
+        } else {
+            lines += "变量检查：通过"
+        }
+
+        val orderedNodeNames = workflow.nodes.joinToString(" -> ") { it.name }
+        lines += "执行预览：$orderedNodeNames"
+        lines += "说明：当前为本地模拟测试，未真正执行 code/agent 节点。"
+
+        val output = lines.joinToString("\n")
+        testOutputArea.text = output
+        appendWorkflowLog("测试运行完成：${workflow.name}")
+    }
+
+    private fun buildWorkflowTestInput(workflow: Workflow): String {
+        if (workflow.variables.isEmpty()) {
+            return "{}"
+        }
+
+        val content = workflow.variables.entries.joinToString(",\n") { (name, variable) ->
+            val sampleValue = when (variable.type.lowercase()) {
+                "string" -> "\"sample_${name}\""
+                "int", "integer", "number" -> "0"
+                "bool", "boolean" -> "false"
+                "list", "array" -> "[]"
+                "object", "map" -> "{}"
+                else -> "null"
+            }
+            "  \"${name}\": ${sampleValue}"
+        }
+
+        return "{\n$content\n}"
+    }
+
+    private fun updateConsoleWorkflowTitle(name: String?) {
+        consoleWorkflowLabel.text = name ?: "workflow"
+    }
+
     private fun addUserMessage(message: String) {
         chatArea.append("\n【你】\n$message\n")
         scrollToBottom()
     }
-    
+
     private fun addAgentMessage(message: String) {
         chatArea.append("\n【Agent】\n$message\n")
         scrollToBottom()
     }
-    
+
     private fun addSystemMessage(message: String) {
         chatArea.append("\n  [$message]\n")
         scrollToBottom()
     }
-    
+
     private fun removeLastSystemMessage() {
         val text = chatArea.text
         val lastIndex = text.lastIndexOf("\n  [")
         if (lastIndex >= 0) {
             val endIndex = text.indexOf("]\n", lastIndex) + 2
-            chatArea.text = text.substring(0, lastIndex) + text.substring(endIndex)
+            if (endIndex >= 2) {
+                chatArea.text = text.substring(0, lastIndex) + text.substring(endIndex)
+            }
         }
     }
-    
+
     private fun addErrorMessage(message: String) {
         chatArea.append("\n【错误】\n$message\n")
         scrollToBottom()
     }
-    
+
     private fun scrollToBottom() {
         chatArea.caretPosition = chatArea.document.length
+    }
+
+    private fun appendWorkflowLog(message: String) {
+        workflowLogArea.append("[${LocalTime.now().withNano(0)}] $message\n")
+        workflowLogArea.caretPosition = workflowLogArea.document.length
     }
 }
