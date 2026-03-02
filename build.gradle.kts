@@ -1,6 +1,6 @@
 plugins {
     id("java")
-    id("org.jetbrains.kotlin.jvm") version "1.9.22"
+    id("org.jetbrains.kotlin.jvm") version "2.2.0"
     id("org.jetbrains.intellij") version "1.17.4"
 }
 
@@ -24,7 +24,7 @@ dependencies {
 
     // Test dependencies
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlin:kotlin-test:1.9.22")
+    testImplementation("org.jetbrains.kotlin:kotlin-test:2.2.0")
 }
 
 intellij {
