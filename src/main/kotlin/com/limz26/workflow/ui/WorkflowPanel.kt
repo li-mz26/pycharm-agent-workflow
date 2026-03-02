@@ -2,6 +2,7 @@ package com.limz26.workflow.ui
 
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.SimpleToolWindowPanel
 import com.intellij.ui.JBSplitter
 import com.intellij.ui.components.JBScrollPane
@@ -10,6 +11,7 @@ import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import com.limz26.workflow.agent.WorkflowAgent
 import com.limz26.workflow.agent.WorkflowContext
+import com.limz26.workflow.mcp.WorkflowMcpService
 import com.limz26.workflow.model.*
 import com.limz26.workflow.settings.AppSettings
 import com.limz26.workflow.util.WorkflowDetector
@@ -29,11 +31,14 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
 
     private val agent = WorkflowAgent()
     private val settings = service<AppSettings>()
+    private val mcpService = service<WorkflowMcpService>()
     private var currentWorkflow: Workflow? = null
     private var loadedWorkflows: List<LoadedWorkflow> = emptyList()
     private var selectedWorkflow: LoadedWorkflow? = null
     private val mainSplitter = JBSplitter(false, 0.35f)
     private var isChatCollapsed = false
+    private val mcpToggleButton = JButton("启用MCP")
+    private val chatToggleButton = JButton("隐藏对话")
 
     private val chatArea = JTextArea().apply {
         isEditable = false
@@ -97,6 +102,15 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
 
         setContent(mainSplitter)
         showWelcomeMessage()
+        syncMcpButtonText()
+        if (settings.mcpServerEnabled) {
+            try {
+                mcpService.startServer(settings.mcpServerPort)
+                appendWorkflowLog("MCP 服务已启动: streamable_http://127.0.0.1:${settings.mcpServerPort}/mcp")
+            } catch (e: Exception) {
+                appendWorkflowLog("MCP 服务启动失败: ${e.message}")
+            }
+        }
     }
 
     private fun initWorkflowFolders() {
@@ -238,18 +252,14 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
 
         val rightActions = JPanel(BorderLayout(6, 0))
         rightActions.add(JButton("刷新").apply { addActionListener { initWorkflowFolders() } }, BorderLayout.WEST)
-        rightActions.add(JButton("隐藏对话").apply {
-            addActionListener {
-                isChatCollapsed = !isChatCollapsed
-                if (isChatCollapsed) {
-                    mainSplitter.proportion = 0.0f
-                    text = "展开对话"
-                } else {
-                    mainSplitter.proportion = 0.35f
-                    text = "隐藏对话"
-                }
-            }
-        }, BorderLayout.EAST)
+
+        val togglePanel = JPanel(BorderLayout(6, 0))
+        mcpToggleButton.addActionListener { onToggleMcpServer() }
+        chatToggleButton.addActionListener { onToggleChatPanel() }
+        togglePanel.add(mcpToggleButton, BorderLayout.WEST)
+        togglePanel.add(chatToggleButton, BorderLayout.EAST)
+
+        rightActions.add(togglePanel, BorderLayout.EAST)
         topBar.add(rightActions, BorderLayout.EAST)
 
         val tabs = JTabbedPane()
@@ -277,6 +287,65 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         panel.add(topBar, BorderLayout.NORTH)
         panel.add(splitter, BorderLayout.CENTER)
         return panel
+    }
+
+    private fun onToggleMcpServer() {
+        if (mcpService.isRunning()) {
+            mcpService.stopServer()
+            settings.mcpServerEnabled = false
+            appendWorkflowLog("MCP 服务已停止")
+            syncMcpButtonText()
+            return
+        }
+
+        val input = Messages.showInputDialog(
+            project,
+            "请输入 MCP 服务端口（1-65535）",
+            "启用 MCP 服务",
+            Messages.getQuestionIcon(),
+            settings.mcpServerPort.toString(),
+            null
+        ) ?: return
+
+        val port = input.toIntOrNull()
+        if (port == null || port !in 1..65535) {
+            Messages.showErrorDialog(project, "端口号无效：$input", "MCP 启动失败")
+            return
+        }
+
+        try {
+            settings.mcpServerPort = port
+            settings.mcpServerEnabled = true
+            mcpService.startServer(port)
+            appendWorkflowLog("MCP 服务已启动: streamable_http://127.0.0.1:$port/mcp")
+            syncMcpButtonText()
+        } catch (e: Exception) {
+            Messages.showErrorDialog(project, "启动失败: ${e.message}", "MCP 启动失败")
+            appendWorkflowLog("MCP 服务启动失败: ${e.message}")
+            settings.mcpServerEnabled = false
+            syncMcpButtonText()
+        }
+    }
+
+    private fun syncMcpButtonText() {
+        mcpToggleButton.text = if (mcpService.isRunning()) "关闭MCP" else "启用MCP"
+    }
+
+    private fun onToggleChatPanel() {
+        isChatCollapsed = !isChatCollapsed
+        if (isChatCollapsed) {
+            mainSplitter.firstComponent = JPanel()
+            mainSplitter.proportion = 0.0f
+            mainSplitter.dividerWidth = 0
+            chatToggleButton.text = "展开对话"
+        } else {
+            mainSplitter.firstComponent = createLeftPanel()
+            mainSplitter.proportion = 0.35f
+            mainSplitter.dividerWidth = 7
+            chatToggleButton.text = "隐藏对话"
+        }
+        mainSplitter.revalidate()
+        mainSplitter.repaint()
     }
 
     private fun onSend() {

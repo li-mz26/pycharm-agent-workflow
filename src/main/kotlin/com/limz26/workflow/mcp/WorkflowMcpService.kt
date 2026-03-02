@@ -7,17 +7,25 @@ import com.intellij.openapi.components.service
 import com.limz26.workflow.agent.WorkflowAgent
 import com.limz26.workflow.model.*
 import com.limz26.workflow.settings.AppSettings
+import com.sun.net.httpserver.HttpExchange
+import com.sun.net.httpserver.HttpServer
 import java.io.File
+import java.net.InetSocketAddress
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 import java.util.UUID
 
 /**
- * 内置 MCP 风格服务（供外部调用/二次集成）
- * 提供：工作流列表、工作流 JSON 读取、节点代码读取、编辑、运行（模拟日志）
+ * 内置 MCP 服务（streamable HTTP）
  */
 @Service
 class WorkflowMcpService {
 
     private val gson: Gson = GsonBuilder().setPrettyPrinting().create()
+    @Volatile
+    private var httpServer: HttpServer? = null
+    @Volatile
+    private var runningPort: Int? = null
 
     data class WorkflowSummary(
         val name: String,
@@ -43,12 +51,124 @@ class WorkflowMcpService {
 
     data class McpServerConfig(
         val enabled: Boolean,
-        val port: Int
+        val port: Int,
+        val protocol: String = "streamable_http"
     )
 
     fun getServerConfig(): McpServerConfig {
         val settings = service<AppSettings>()
         return McpServerConfig(settings.mcpServerEnabled, settings.mcpServerPort)
+    }
+
+    fun isRunning(): Boolean = httpServer != null
+
+    fun getRunningPort(): Int? = runningPort
+
+    @Synchronized
+    fun startServer(port: Int) {
+        require(port in 1..65535) { "端口号无效: $port" }
+        if (httpServer != null && runningPort == port) return
+        stopServer()
+
+        val server = HttpServer.create(InetSocketAddress("0.0.0.0", port), 0)
+        server.createContext("/mcp") { exchange ->
+            handleMcpRequest(exchange)
+        }
+        server.executor = null
+        server.start()
+        httpServer = server
+        runningPort = port
+    }
+
+    @Synchronized
+    fun stopServer() {
+        httpServer?.stop(0)
+        httpServer = null
+        runningPort = null
+    }
+
+    private fun handleMcpRequest(exchange: HttpExchange) {
+        try {
+            val method = exchange.requestMethod.uppercase()
+            val path = exchange.requestURI.path
+            val query = parseQuery(exchange.requestURI.rawQuery)
+
+            val result: Any = when {
+                method == "GET" && path == "/mcp" -> mapOf(
+                    "name" to "workflow-mcp",
+                    "protocol" to "streamable_http",
+                    "runningPort" to (runningPort ?: -1),
+                    "endpoints" to listOf(
+                        "GET /mcp/workflows?projectBasePath=...",
+                        "GET /mcp/workflow/json?workflowDirPath=...",
+                        "GET /mcp/workflow/node-code?workflowDirPath=...&nodeId=...",
+                        "POST /mcp/workflow/edit",
+                        "POST /mcp/workflow/run"
+                    )
+                )
+
+                method == "GET" && path == "/mcp/workflows" -> {
+                    val base = query["projectBasePath"] ?: ""
+                    listWorkflows(base)
+                }
+
+                method == "GET" && path == "/mcp/workflow/json" -> {
+                    val dir = query["workflowDirPath"] ?: error("缺少 workflowDirPath")
+                    mapOf("workflowJson" to readWorkflowJson(dir))
+                }
+
+                method == "GET" && path == "/mcp/workflow/node-code" -> {
+                    val dir = query["workflowDirPath"] ?: error("缺少 workflowDirPath")
+                    val nodeId = query["nodeId"] ?: error("缺少 nodeId")
+                    mapOf("code" to readNodeCodeFile(dir, nodeId))
+                }
+
+                method == "POST" && path == "/mcp/workflow/edit" -> {
+                    val payload = gson.fromJson(readBody(exchange), Map::class.java)
+                    val workflowDirPath = payload["workflowDirPath"]?.toString() ?: error("缺少 workflowDirPath")
+                    val requestJson = gson.toJson(payload["request"])
+                    val request = gson.fromJson(requestJson, WorkflowEditRequest::class.java)
+                    mapOf("workflowJson" to editWorkflow(workflowDirPath, request))
+                }
+
+                method == "POST" && path == "/mcp/workflow/run" -> {
+                    val payload = gson.fromJson(readBody(exchange), Map::class.java)
+                    val workflowDirPath = payload["workflowDirPath"]?.toString() ?: error("缺少 workflowDirPath")
+                    runWorkflow(workflowDirPath)
+                }
+
+                else -> {
+                    sendJson(exchange, 404, mapOf("error" to "Unsupported endpoint: $method $path"))
+                    return
+                }
+            }
+
+            sendJson(exchange, 200, result)
+        } catch (e: Exception) {
+            sendJson(exchange, 500, mapOf("error" to (e.message ?: "unknown error")))
+        }
+    }
+
+    private fun sendJson(exchange: HttpExchange, status: Int, payload: Any) {
+        val bytes = gson.toJson(payload).toByteArray(StandardCharsets.UTF_8)
+        exchange.responseHeaders.add("Content-Type", "application/json; charset=utf-8")
+        exchange.sendResponseHeaders(status, bytes.size.toLong())
+        exchange.responseBody.use { it.write(bytes) }
+    }
+
+    private fun readBody(exchange: HttpExchange): String {
+        return exchange.requestBody.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+    }
+
+    private fun parseQuery(rawQuery: String?): Map<String, String> {
+        if (rawQuery.isNullOrBlank()) return emptyMap()
+        return rawQuery.split("&").mapNotNull { pair ->
+            val idx = pair.indexOf('=')
+            if (idx <= 0) return@mapNotNull null
+            val key = URLDecoder.decode(pair.substring(0, idx), StandardCharsets.UTF_8)
+            val value = URLDecoder.decode(pair.substring(idx + 1), StandardCharsets.UTF_8)
+            key to value
+        }.toMap()
     }
 
     fun listWorkflows(projectBasePath: String): List<WorkflowSummary> {
@@ -104,7 +224,6 @@ class WorkflowMcpService {
             File(nodesDir, "${nodeId}_prompt.md").writeText(prompt)
         }
 
-        // 删除节点关联文件
         request.removeNodeIds.forEach { nodeId ->
             File(nodesDir, "$nodeId.py").takeIf { it.exists() }?.delete()
             File(nodesDir, "${nodeId}_prompt.md").takeIf { it.exists() }?.delete()
