@@ -22,7 +22,9 @@ repositories {
 
 dependencies {
     implementation("com.google.code.gson:gson:2.10.1")
-    implementation("io.modelcontextprotocol:kotlin-sdk-server:0.8.3")
+    // Use JVM-targeted artifacts explicitly to ensure classes are packaged into IntelliJ plugin sandbox/lib
+    implementation("io.modelcontextprotocol:kotlin-sdk-server-jvm:0.8.3")
+    implementation("io.modelcontextprotocol:kotlin-sdk-core-jvm:0.8.3")
     implementation("io.ktor:ktor-server-cio:3.2.3")
     implementation("io.ktor:ktor-server-sse:3.2.3")
 
