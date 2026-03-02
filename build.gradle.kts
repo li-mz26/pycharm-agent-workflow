@@ -1,5 +1,6 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import org.jetbrains.intellij.tasks.PrepareSandboxTask
 
 plugins {
     id("java")
@@ -56,6 +57,13 @@ tasks {
     // Workaround: avoid flaky online self-version check in restricted networks
     withType<org.jetbrains.intellij.tasks.InitializeIntelliJPluginTask> {
         enabled = false
+    }
+
+    // Ensure external runtime dependencies are copied into plugin sandbox/lib to avoid PluginClassLoader CNFEs.
+    withType<PrepareSandboxTask> {
+        from(configurations.runtimeClasspath) {
+            into("${intellij.pluginName.get()}/lib")
+        }
     }
 
     patchPluginXml {
