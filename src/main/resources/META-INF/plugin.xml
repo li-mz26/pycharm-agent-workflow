@@ -26,16 +26,19 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <!-- Agent Workflow 工具窗口 -->
-        <toolWindow id="Agent Workflow" 
-                    secondary="true" 
-                    anchor="right" 
+        <toolWindow id="Agent Workflow"
+                    secondary="true"
+                    anchor="right"
                     factoryClass="com.limz26.workflow.ui.WorkflowToolWindowFactory"/>
-        
-        <applicationService 
+
+        <applicationService
             serviceImplementation="com.limz26.workflow.settings.AppSettings"/>
-        
-        <applicationConfigurable 
-            parentId="application.other" 
+
+        <applicationService
+            serviceImplementation="com.limz26.workflow.mcp.WorkflowMcpService"/>
+
+        <applicationConfigurable
+            parentId="application.other"
             instance="com.limz26.workflow.settings.SettingsConfigurable"
             id="com.limz26.workflow.settings.SettingsConfigurable"
             displayName="Agent Workflow"/>
@@ -50,7 +53,7 @@
             <add-to-group group-id="ToolsMenu" anchor="last"/>
             <keyboard-shortcut keymap="$default" first-keystroke="ctrl shift W"/>
         </action>
-        
+
         <!-- 从选中代码生成 -->
         <action id="com.limz26.workflow.GenerateFromSelection"
                 class="com.limz26.workflow.actions.GenerateWorkflowFromSelectionAction"

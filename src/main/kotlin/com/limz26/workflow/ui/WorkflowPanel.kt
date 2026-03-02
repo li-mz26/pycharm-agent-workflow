@@ -53,9 +53,8 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     }
 
     private val canvas = WorkflowCanvas(project)
-    private val folderListModel = DefaultListModel<String>()
-    private val folderList = JList(folderListModel)
-
+    private val workflowComboModel = DefaultComboBoxModel<String>()
+    private val workflowCombo = JComboBox(workflowComboModel)
     private val consoleWorkflowLabel = JLabel("workflow")
 
     // 可视化底部 console 面板
@@ -101,16 +100,25 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
 
     private fun initWorkflowFolders() {
         loadedWorkflows = WorkflowDetector.detectWorkflowFolders(project)
-        updateFolderList()
+        updateWorkflowCombo()
     }
 
-    private fun updateFolderList() {
-        folderListModel.clear()
-        loadedWorkflows.forEach { workflow ->
-            folderListModel.addElement("✓ ${workflow.name}")
-        }
+    private fun updateWorkflowCombo() {
+        workflowComboModel.removeAllElements()
+        loadedWorkflows.forEach { workflowComboModel.addElement(workflow.name) }
+
         if (loadedWorkflows.isEmpty()) {
-            folderListModel.addElement("(无工作流文件夹)")
+            workflowComboModel.addElement("(无工作流)")
+            workflowCombo.selectedIndex = 0
+            workflowCombo.isEnabled = false
+        } else {
+            workflowCombo.isEnabled = true
+            val currentName = selectedWorkflow?.name
+            val index = loadedWorkflows.indexOfFirst { it.name == currentName }
+            workflowCombo.selectedIndex = if (index >= 0) index else 0
+            if (selectedWorkflow == null && loadedWorkflows.isNotEmpty()) {
+                loadWorkflowFolder(loadedWorkflows.first())
+            }
         }
     }
 
@@ -129,34 +137,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     }
 
     private fun createLeftPanel(): JPanel {
-        val panel = JPanel(BorderLayout())
-
-        val listPanel = JPanel(BorderLayout())
-        listPanel.border = BorderFactory.createTitledBorder("工作流 (${loadedWorkflows.size})")
-
-        folderList.selectionMode = ListSelectionModel.SINGLE_SELECTION
-        folderList.addListSelectionListener { event ->
-            if (!event.valueIsAdjusting) {
-                val idx = folderList.selectedIndex
-                if (idx >= 0 && idx < loadedWorkflows.size) {
-                    loadWorkflowFolder(loadedWorkflows[idx])
-                }
-            }
-        }
-
-        listPanel.add(JBScrollPane(folderList), BorderLayout.CENTER)
-        listPanel.add(JButton("刷新").apply {
-            addActionListener { initWorkflowFolders() }
-        }, BorderLayout.SOUTH)
-
-        val chatPanel = createChatPanel()
-
-        val splitter = JBSplitter(true, 0.3f)
-        splitter.firstComponent = listPanel
-        splitter.secondComponent = chatPanel
-
-        panel.add(splitter, BorderLayout.CENTER)
-        return panel
+        return createChatPanel()
     }
 
     private fun loadWorkflowFolder(workflow: LoadedWorkflow) {
@@ -240,6 +221,21 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         val panel = JPanel(BorderLayout())
         panel.border = BorderFactory.createTitledBorder("工作流可视化")
 
+        val topBar = JPanel(BorderLayout())
+        topBar.border = JBUI.Borders.empty(4)
+        val selectorPanel = JPanel(BorderLayout(6, 0))
+        selectorPanel.add(JLabel("工作流"), BorderLayout.WEST)
+        workflowCombo.renderer = DefaultListCellRenderer()
+        workflowCombo.addActionListener {
+            val idx = workflowCombo.selectedIndex
+            if (idx >= 0 && idx < loadedWorkflows.size) {
+                loadWorkflowFolder(loadedWorkflows[idx])
+            }
+        }
+        selectorPanel.add(workflowCombo, BorderLayout.CENTER)
+        topBar.add(selectorPanel, BorderLayout.CENTER)
+        topBar.add(JButton("刷新").apply { addActionListener { initWorkflowFolders() } }, BorderLayout.EAST)
+
         val tabs = JTabbedPane()
         tabs.addTab("输入", JBScrollPane(testInputArea))
         tabs.addTab("输出", JBScrollPane(testOutputArea))
@@ -258,10 +254,11 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         consolePanel.add(runHeader, BorderLayout.NORTH)
         consolePanel.add(tabs, BorderLayout.CENTER)
 
-        val splitter = JBSplitter(true, 0.70f)
+        val splitter = JBSplitter(true, 0.68f)
         splitter.firstComponent = canvas
         splitter.secondComponent = consolePanel
 
+        panel.add(topBar, BorderLayout.NORTH)
         panel.add(splitter, BorderLayout.CENTER)
         return panel
     }
@@ -333,7 +330,6 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         testOutputArea.text = "导出成功：$exportedPath"
         initWorkflowFolders()
     }
-
 
     private fun onRunWorkflowTest() {
         val workflow = currentWorkflow
