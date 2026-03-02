@@ -7,12 +7,15 @@ import com.intellij.openapi.components.service
 import com.limz26.workflow.agent.WorkflowAgent
 import com.limz26.workflow.model.*
 import com.limz26.workflow.settings.AppSettings
+import io.ktor.server.application.install
 import io.ktor.server.cio.CIO
-import io.ktor.server.engine.ApplicationEngine
+import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
+import io.ktor.server.routing.routing
+import io.ktor.server.sse.SSE
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
-import io.modelcontextprotocol.kotlin.sdk.server.mcpStreamableHttp
+import io.modelcontextprotocol.kotlin.sdk.server.mcp
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
@@ -36,7 +39,7 @@ class WorkflowMcpService {
     private val gson: Gson = GsonBuilder().setPrettyPrinting().create()
 
     @Volatile
-    private var engine: ApplicationEngine? = null
+    private var engine: EmbeddedServer<*, *>? = null
 
     @Volatile
     private var runningPort: Int? = null
@@ -87,8 +90,11 @@ class WorkflowMcpService {
         stopServer()
 
         val appEngine = embeddedServer(CIO, host = "0.0.0.0", port = port) {
-            mcpStreamableHttp(path = "/mcp") {
-                mcpServer
+            install(SSE)
+            routing {
+                mcp("/mcp") {
+                    mcpServer
+                }
             }
         }
         appEngine.start(wait = false)
