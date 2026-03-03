@@ -14,6 +14,7 @@ import com.limz26.workflow.agent.WorkflowContext
 import com.limz26.workflow.mcp.WorkflowMcpService
 import com.limz26.workflow.model.*
 import com.limz26.workflow.settings.AppSettings
+import com.limz26.workflow.service.WorkflowService
 import com.limz26.workflow.util.WorkflowDetector
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -32,6 +33,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     private val agent = WorkflowAgent()
     private val settings = service<AppSettings>()
     private val mcpService = service<WorkflowMcpService>()
+    private val workflowService = service<WorkflowService>()
     private var currentWorkflow: Workflow? = null
     private var loadedWorkflows: List<LoadedWorkflow> = emptyList()
     private var selectedWorkflow: LoadedWorkflow? = null
@@ -426,7 +428,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         }
 
         val rawInput = testInputArea.text.trim().ifEmpty { "{}" }
-        val parsedInput = try {
+        try {
             Json.parseToJsonElement(rawInput).jsonObject
         } catch (e: Exception) {
             testOutputArea.text = "测试输入 JSON 格式错误：${e.message}"
@@ -434,26 +436,20 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
             return
         }
 
-        val missingVars = workflow.variables.keys.filterNot { parsedInput.containsKey(it) }
-        val lines = mutableListOf<String>()
-        lines += "工作流：${workflow.name}"
-        lines += "节点数：${workflow.nodes.size}，连线数：${workflow.edges.size}"
-        lines += "输入字段：${parsedInput.keys.joinToString(", ").ifBlank { "(空)" }}"
-
-        if (missingVars.isNotEmpty()) {
-            lines += "缺失变量：${missingVars.joinToString(", ")}"
-        } else {
-            lines += "变量检查：通过"
+        val workflowDirPath = selectedWorkflow?.baseDir?.absolutePath ?: run {
+            val projectBase = project.basePath ?: "."
+            WorkflowExporter(projectBase).export(workflow)
         }
 
-        val orderedNodeNames = workflow.nodes.joinToString(" -> ") { it.name }
-        lines += "执行预览：$orderedNodeNames"
-        lines += "说明：当前为本地模拟测试，未真正执行 code/agent 节点。"
-
-        val output = lines.joinToString("\n")
-        testOutputArea.text = output
-        appendWorkflowLog("测试运行完成：${workflow.name}")
+        val result = workflowService.runWorkflow(workflowDirPath)
+        testOutputArea.text = result.logs.joinToString("\n")
+        if (result.success) {
+            appendWorkflowLog("测试运行完成：${workflow.name}")
+        } else {
+            appendWorkflowLog("测试运行失败：${result.validationErrors.joinToString("; ")}")
+        }
     }
+
 
     private fun buildWorkflowTestInput(workflow: Workflow): String {
         if (workflow.variables.isEmpty()) {
