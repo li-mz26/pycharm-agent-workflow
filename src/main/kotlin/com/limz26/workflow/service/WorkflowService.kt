@@ -49,12 +49,22 @@ class WorkflowService {
 
         val nodeById = loaded.definition.nodes.associateBy { it.id }
         val incomingEdges = loaded.definition.edges.groupBy { it.target }
+        val outgoingEdges = loaded.definition.edges.groupBy { it.source }
         val outputs = mutableMapOf<String, Map<String, Any?>>()
+        val activeEdgeIds = mutableSetOf<String>()
 
         for ((index, nodeId) in executionOrder.withIndex()) {
             val node = nodeById.getValue(nodeId)
             val nodeType = runCatching { NodeType.valueOf(node.type.uppercase()) }.getOrElse { NodeType.CODE }
-            val upstreamNodeIds = incomingEdges[node.id].orEmpty().map { it.source }
+            val incomingForNode = incomingEdges[node.id].orEmpty()
+            val activeIncoming = incomingForNode.filter { it.id in activeEdgeIds }
+
+            if (incomingForNode.isNotEmpty() && activeIncoming.isEmpty()) {
+                logs += "[${index + 1}/${executionOrder.size}] 跳过节点: ${node.name} (${node.type})，未命中条件分支"
+                continue
+            }
+
+            val upstreamNodeIds = activeIncoming.map { it.source }
             val mergedInputs = mergeUpstreamInputs(upstreamNodeIds, outputs)
             logs += "[${index + 1}/${executionOrder.size}] 执行节点: ${node.name} (${node.type})"
 
@@ -68,6 +78,16 @@ class WorkflowService {
                 }
                 outputs[node.id] = result
                 logs += "  - 输出: ${gson.toJson(result).take(300)}"
+
+                val outgoingForNode = outgoingEdges[node.id].orEmpty()
+                if (nodeType == NodeType.CONDITION) {
+                    val conditionResult = evaluateConditionResult(node, mergedInputs, result)
+                    val selected = selectConditionEdges(outgoingForNode, conditionResult)
+                    activeEdgeIds.addAll(selected.map { it.id })
+                    logs += "  - 条件结果: $conditionResult, 命中分支: ${selected.joinToString { it.target }}"
+                } else {
+                    activeEdgeIds.addAll(outgoingForNode.map { it.id })
+                }
             } catch (e: Exception) {
                 logs += "  - 节点执行失败: ${e.message}"
                 return WorkflowExecutionResult(false, logs, listOf("节点 ${node.id} 执行失败: ${e.message}"))
@@ -232,6 +252,100 @@ print(json.dumps(result, ensure_ascii=False))
         val jsonLine = stdout.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.lastOrNull() ?: "{}"
         val parsed = gson.fromJson(jsonLine, Map::class.java)
         return parsed as? Map<*, *> ?: emptyMap<String, Any?>()
+    }
+
+    private fun evaluateConditionResult(
+        node: NodeDefinition,
+        mergedInputs: Map<String, Any?>,
+        executionResult: Map<String, Any?>
+    ): Boolean {
+        val configuredExpression = node.config.condition?.trim().orEmpty()
+        if (configuredExpression.isBlank()) {
+            return when (val raw = executionResult["condition"] ?: mergedInputs["condition"] ?: mergedInputs["result"]) {
+                is Boolean -> raw
+                is Number -> raw.toInt() != 0
+                is String -> raw.equals("true", ignoreCase = true) || raw == "1" || raw == "是" || raw == "有"
+                else -> false
+            }
+        }
+
+        val lengthPattern = Regex("""len\(([^)]+)\)\s*(==|!=|>=|<=|>|<)\s*(\d+)""")
+        val simplePattern = Regex("""([a-zA-Z0-9_\.]+)\s*(==|!=|>=|<=|>|<)\s*(.+)""")
+
+        lengthPattern.matchEntire(configuredExpression)?.let { match ->
+            val key = match.groupValues[1].trim()
+            val op = match.groupValues[2]
+            val right = match.groupValues[3].toIntOrNull() ?: return false
+            val value = resolvePath(mergedInputs, key)
+            val left = when (value) {
+                is Collection<*> -> value.size
+                is Map<*, *> -> value.size
+                is String -> value.length
+                is Array<*> -> value.size
+                else -> 0
+            }
+            return compareNumber(left.toDouble(), op, right.toDouble())
+        }
+
+        simplePattern.matchEntire(configuredExpression)?.let { match ->
+            val key = match.groupValues[1].trim()
+            val op = match.groupValues[2]
+            val rightRaw = match.groupValues[3].trim().trim('"', '\'')
+            val left = resolvePath(mergedInputs, key)
+            val rightNumber = rightRaw.toDoubleOrNull()
+            val leftNumber = (left as? Number)?.toDouble()
+            if (leftNumber != null && rightNumber != null) {
+                return compareNumber(leftNumber, op, rightNumber)
+            }
+            val leftText = left?.toString().orEmpty()
+            return compareText(leftText, op, rightRaw)
+        }
+
+        return false
+    }
+
+    private fun selectConditionEdges(outgoing: List<EdgeDefinition>, conditionResult: Boolean): List<EdgeDefinition> {
+        if (outgoing.isEmpty()) return emptyList()
+
+        val matched = outgoing.filter { edgeMatchesConditionResult(it.condition, conditionResult) }
+        if (matched.isNotEmpty()) return matched
+
+        if (outgoing.size == 1) return outgoing
+        return if (conditionResult) listOf(outgoing.first()) else listOf(outgoing.last())
+    }
+
+    private fun edgeMatchesConditionResult(label: String?, conditionResult: Boolean): Boolean {
+        val normalized = label?.trim()?.lowercase().orEmpty()
+        if (normalized.isBlank()) return false
+
+        val trueLabels = setOf("true", "yes", "y", "1", "有", "是", "命中", "通过", "success")
+        val falseLabels = setOf("false", "no", "n", "0", "无", "否", "不通过", "失败", "else", "default")
+
+        return if (conditionResult) {
+            trueLabels.any { normalized.contains(it) }
+        } else {
+            falseLabels.any { normalized.contains(it) }
+        }
+    }
+
+    private fun compareNumber(left: Double, op: String, right: Double): Boolean {
+        return when (op) {
+            "==" -> left == right
+            "!=" -> left != right
+            ">" -> left > right
+            "<" -> left < right
+            ">=" -> left >= right
+            "<=" -> left <= right
+            else -> false
+        }
+    }
+
+    private fun compareText(left: String, op: String, right: String): Boolean {
+        return when (op) {
+            "==" -> left == right
+            "!=" -> left != right
+            else -> false
+        }
     }
 
     private fun toWorkflow(def: WorkflowDefinition): Workflow {
