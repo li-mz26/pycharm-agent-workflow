@@ -75,6 +75,7 @@ class WorkflowMcpRuntimeTest {
                 .timeout(Duration.ofSeconds(5))
                 .header("Origin", "http://localhost:6274")
                 .header("Access-Control-Request-Method", "POST")
+                .header("Access-Control-Request-Headers", "content-type,mcp-session-id,mcp-protocol-version")
                 .method("OPTIONS", HttpRequest.BodyPublishers.noBody())
                 .build()
             val optionsResp = client.send(optionsReq, HttpResponse.BodyHandlers.ofString())
@@ -83,6 +84,12 @@ class WorkflowMcpRuntimeTest {
             assertTrue(
                 "CORS preflight should return Access-Control-Allow-Origin",
                 optionsResp.headers().firstValue("Access-Control-Allow-Origin").isPresent
+            )
+            assertTrue(
+                "CORS preflight should allow mcp-protocol-version header",
+                optionsResp.headers().firstValue("Access-Control-Allow-Headers")
+                    .map { it.lowercase().contains("mcp-protocol-version") }
+                    .orElse(false)
             )
         } finally {
             runtime.stop()
