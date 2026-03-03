@@ -57,6 +57,35 @@ class WorkflowMcpServiceTest {
         assertEquals(600, positions.getValue("n3").x)
     }
 
+
+    @Test
+    fun `list workflows accepts workflows directory path directly`() {
+        val service = WorkflowMcpService()
+        val projectDir = Files.createTempDirectory("workflow-list-test").toFile()
+        val workflowsDir = File(projectDir, "workflows").apply { mkdirs() }
+        val workflowDir = File(workflowsDir, "wf1").apply { mkdirs() }
+
+        val workflow = WorkflowDefinition(
+            id = "wf-list",
+            name = "wf-list",
+            description = "",
+            nodes = listOf(
+                NodeDefinition("n1", "start", "start", PositionDefinition(0, 0), NodeConfigDefinition()),
+                NodeDefinition("n2", "end", "end", PositionDefinition(0, 0), NodeConfigDefinition())
+            ),
+            edges = listOf(EdgeDefinition("e1", "n1", "n2")),
+            variables = emptyMap()
+        )
+        File(workflowDir, "workflow.json").writeText(gson.toJson(workflow))
+
+        val fromProjectPath = service.listWorkflows(projectDir.absolutePath)
+        val fromWorkflowsPath = service.listWorkflows(workflowsDir.absolutePath)
+
+        assertEquals(1, fromProjectPath.size)
+        assertEquals(1, fromWorkflowsPath.size)
+        assertEquals(fromProjectPath.first().path, fromWorkflowsPath.first().path)
+    }
+
     @Test
     fun `run workflow executes python code node`() {
         val service = WorkflowMcpService()

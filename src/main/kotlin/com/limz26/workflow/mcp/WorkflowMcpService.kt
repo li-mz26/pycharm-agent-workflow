@@ -353,7 +353,18 @@ class WorkflowMcpService {
     fun listWorkflows(projectBasePath: String?): List<WorkflowSummary> {
         val loader = WorkflowLoader()
         val basePath = resolveProjectBasePath(projectBasePath)
-        return loader.scanWorkflows(File(basePath)).map {
+        val baseDir = File(basePath)
+
+        val loadedWorkflows = when {
+            File(baseDir, "workflows").isDirectory -> loader.scanWorkflows(baseDir)
+            baseDir.name == "workflows" && baseDir.isDirectory -> {
+                baseDir.listFiles { f -> f.isDirectory }?.mapNotNull { loader.load(it) } ?: emptyList()
+            }
+            File(baseDir, "workflow.json").isFile -> listOfNotNull(loader.load(baseDir))
+            else -> emptyList()
+        }
+
+        return loadedWorkflows.map {
             WorkflowSummary(it.name, it.baseDir.absolutePath, it.definition.nodes.size)
         }
     }
