@@ -5,7 +5,10 @@ import io.ktor.server.application.install
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
+import io.ktor.server.plugins.cors.routing.CORS
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.mcpStreamableHttp
 import io.modelcontextprotocol.kotlin.sdk.shared.McpJson
@@ -36,6 +39,15 @@ class WorkflowMcpRuntime(
             embeddedServer(CIO, host = "0.0.0.0", port = port) {
                 install(ContentNegotiation) {
                     json(McpJson)
+                }
+                install(CORS) {
+                    anyHost()
+                    allowMethod(HttpMethod.Get)
+                    allowMethod(HttpMethod.Post)
+                    allowMethod(HttpMethod.Options)
+                    allowHeader(HttpHeaders.ContentType)
+                    allowHeader(HttpHeaders.Authorization)
+                    allowHeader("mcp-session-id")
                 }
                 mcpStreamableHttp {
                     serverProvider()
