@@ -27,6 +27,7 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
     private var selectedNode: String? = null
     private var hoverNode: String? = null
     private var nodeSelectionListener: ((NodeDefinition?) -> Unit)? = null
+    private var workflowDefinitionChangeListener: ((WorkflowDefinition) -> Unit)? = null
 
     // 视图状态
     private var scale = 1.0
@@ -231,21 +232,20 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
                 }
             )
         }
+        workflowDefinitionChangeListener?.invoke(newDefinition)
     }
 
-    fun setWorkflow(loadedWorkflow: LoadedWorkflow) {
+    fun setWorkflow(loadedWorkflow: LoadedWorkflow, autoLayout: Boolean = true) {
         this.loadedWorkflow = loadedWorkflow
         this.workflow = null
-        // 自动布局节点（垂直方向）
-        autoLayoutNodes(loadedWorkflow.definition)
+        if (autoLayout) autoLayoutNodes(loadedWorkflow.definition)
         repaint()
     }
 
-    fun setWorkflow(workflow: Workflow) {
+    fun setWorkflow(workflow: Workflow, autoLayout: Boolean = true) {
         this.workflow = workflow
         this.loadedWorkflow = null
-        // 自动布局节点（垂直方向）
-        autoLayoutNodes(convertToDefinition(workflow))
+        if (autoLayout) autoLayoutNodes(convertToDefinition(workflow))
         repaint()
     }
 
@@ -724,6 +724,7 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
         if (workflow != null) {
             workflow = convertFromDefinition(newDefinition)
         }
+        workflowDefinitionChangeListener?.invoke(newDefinition)
         repaint()
     }
 
@@ -773,6 +774,10 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
 
     fun setOnNodeSelected(listener: (NodeDefinition?) -> Unit) {
         nodeSelectionListener = listener
+    }
+
+    fun setOnWorkflowDefinitionChanged(listener: (WorkflowDefinition) -> Unit) {
+        workflowDefinitionChangeListener = listener
     }
 
 

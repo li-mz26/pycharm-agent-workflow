@@ -22,6 +22,7 @@ import java.awt.BorderLayout
 import java.awt.CardLayout
 import java.awt.Dimension
 import java.awt.Font
+import java.awt.GridLayout
 import java.time.LocalTime
 import javax.swing.*
 import javax.swing.border.MatteBorder
@@ -67,7 +68,6 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     private val workflowCombo = JComboBox(workflowComboModel)
     private val consoleWorkflowLabel = JLabel("workflow")
     private var nodeConfigSplitter: JBSplitter? = null
-    private var nodeConfigHidden = false
 
     // 可视化底部 console 面板
     private val testInputArea = JBTextArea().apply {
@@ -182,8 +182,10 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     }
 
     private fun convertToWorkflow(loaded: LoadedWorkflow): Workflow {
-        val def = loaded.definition
+        return convertToWorkflow(loaded.definition)
+    }
 
+    private fun convertToWorkflow(def: WorkflowDefinition): Workflow {
         return Workflow(
             name = def.name,
             description = def.description,
@@ -296,11 +298,16 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         canvas.setOnNodeSelected { node ->
             updateNodeConfigPanel(rightEditor, node)
         }
+        canvas.setOnWorkflowDefinitionChanged { def ->
+            currentWorkflow = convertToWorkflow(def)
+            selectedWorkflow = selectedWorkflow?.copy(definition = def)
+        }
 
         val canvasWithEditor = JBSplitter(false, 0.72f)
         nodeConfigSplitter = canvasWithEditor
         canvasWithEditor.firstComponent = canvas
         canvasWithEditor.secondComponent = rightEditor
+        setNodeConfigPanelVisible(false)
 
         val splitter = JBSplitter(true, 0.68f)
         splitter.firstComponent = canvasWithEditor
@@ -318,16 +325,11 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         val header = JPanel(BorderLayout())
         val titleLabel = JLabel("未选择节点")
         header.add(titleLabel, BorderLayout.WEST)
-        val toggleBtn = JButton("隐藏").apply {
-            addActionListener { toggleNodeConfigPanel() }
-        }
-        header.add(toggleBtn, BorderLayout.EAST)
         panel.add(header, BorderLayout.NORTH)
 
         val cardLayout = CardLayout()
         val cardPanel = JPanel(cardLayout)
         panel.putClientProperty("titleLabel", titleLabel)
-        panel.putClientProperty("toggleBtn", toggleBtn)
         panel.putClientProperty("cardLayout", cardLayout)
         panel.putClientProperty("cardPanel", cardPanel)
 
@@ -377,12 +379,18 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
 
         val condForm = JPanel(BorderLayout(0, 8))
         condForm.border = JBUI.Borders.empty(8)
-        val condTableArea = JTextArea(8, 20).apply { lineWrap = true; wrapStyleWord = true }
+        val rowsPanel = JPanel().apply { layout = BoxLayout(this, BoxLayout.Y_AXIS) }
+        val addRowBtn = JButton("添加条件")
         val condSaveBtn = JButton("保存条件流向")
-        condForm.add(JLabel("每行格式: condition:targetNodeId"), BorderLayout.NORTH)
-        condForm.add(JBScrollPane(condTableArea), BorderLayout.CENTER)
-        condForm.add(condSaveBtn, BorderLayout.SOUTH)
-        panel.putClientProperty("condArea", condTableArea)
+        val btnPanel = JPanel(GridLayout(1, 2, 6, 0)).apply {
+            add(addRowBtn)
+            add(condSaveBtn)
+        }
+        condForm.add(JLabel("条件分支配置"), BorderLayout.NORTH)
+        condForm.add(JBScrollPane(rowsPanel), BorderLayout.CENTER)
+        condForm.add(btnPanel, BorderLayout.SOUTH)
+        panel.putClientProperty("condRowsPanel", rowsPanel)
+        panel.putClientProperty("condAddBtn", addRowBtn)
         panel.putClientProperty("condSaveBtn", condSaveBtn)
         cardPanel.add(condForm, "condition")
 
@@ -391,18 +399,11 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         return panel
     }
 
-    private fun toggleNodeConfigPanel() {
+    private fun setNodeConfigPanelVisible(visible: Boolean) {
         val splitter = nodeConfigSplitter ?: return
-        nodeConfigHidden = !nodeConfigHidden
-        if (nodeConfigHidden) {
-            splitter.proportion = 1.0f
-        } else {
-            splitter.proportion = 0.72f
-        }
-        val right = splitter.secondComponent as? JPanel
-        val btn = right?.getClientProperty("toggleBtn") as? JButton
-        btn?.text = if (nodeConfigHidden) "展开" else "隐藏"
+        splitter.proportion = if (visible) 0.72f else 1.0f
     }
+
 
     private fun updateNodeConfigPanel(panel: JPanel, node: NodeDefinition?) {
         val cardLayout = panel.getClientProperty("cardLayout") as? CardLayout ?: return
@@ -412,9 +413,11 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         if (node == null) {
             titleLabel?.text = "未选择节点"
             cardLayout.show(cardPanel, "empty")
+            setNodeConfigPanelVisible(false)
             return
         }
 
+        setNodeConfigPanelVisible(true)
         titleLabel?.text = "${node.name} (${node.type})"
         when (node.type) {
             "code" -> bindCodeForm(panel, node, cardLayout, cardPanel)
@@ -465,17 +468,38 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     }
 
     private fun bindConditionForm(panel: JPanel, node: NodeDefinition, cardLayout: CardLayout, cardPanel: JPanel) {
-        val condArea = panel.getClientProperty("condArea") as? JTextArea ?: return
+        val rowsPanel = panel.getClientProperty("condRowsPanel") as? JPanel ?: return
+        val addBtn = panel.getClientProperty("condAddBtn") as? JButton ?: return
         val saveBtn = panel.getClientProperty("condSaveBtn") as? JButton ?: return
-        condArea.text = currentWorkflow?.edges?.filter { it.source == node.id }?.joinToString("\n") {
-            "${it.condition.orEmpty()}:${it.target}"
-        }.orEmpty()
+
+        rowsPanel.removeAll()
+        val edges = currentWorkflow?.edges?.filter { it.source == node.id }.orEmpty()
+        if (edges.isEmpty()) {
+            addConditionRow(rowsPanel, "", "")
+        } else {
+            edges.forEach { edge ->
+                addConditionRow(rowsPanel, edge.condition.orEmpty(), edge.target)
+            }
+        }
+        rowsPanel.revalidate()
+        rowsPanel.repaint()
+
+        addBtn.actionListeners.forEach { addBtn.removeActionListener(it) }
+        addBtn.addActionListener {
+            addConditionRow(rowsPanel, "", "")
+            rowsPanel.revalidate()
+            rowsPanel.repaint()
+        }
 
         saveBtn.actionListeners.forEach { saveBtn.removeActionListener(it) }
         saveBtn.addActionListener {
-            val parsed = condArea.text.lines().mapNotNull { line ->
-                val idx = line.indexOf(':')
-                if (idx < 0) null else line.substring(0, idx).trim() to line.substring(idx + 1).trim()
+            val parsed = rowsPanel.components.mapNotNull { comp ->
+                val row = comp as? JPanel ?: return@mapNotNull null
+                val condField = row.getClientProperty("condField") as? JTextField ?: return@mapNotNull null
+                val targetField = row.getClientProperty("targetField") as? JTextField ?: return@mapNotNull null
+                val target = targetField.text.trim()
+                if (target.isBlank()) return@mapNotNull null
+                condField.text.trim() to target
             }
             val wf = currentWorkflow ?: return@addActionListener
             val keep = wf.edges.filterNot { it.source == node.id }
@@ -483,15 +507,34 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
                 WorkflowEdge(source = node.id, target = target, condition = cond.ifBlank { null })
             }
             currentWorkflow = wf.copy(edges = keep + newEdges)
-            canvas.setWorkflow(currentWorkflow!!)
+            canvas.setWorkflow(currentWorkflow!!, autoLayout = false)
         }
         cardLayout.show(cardPanel, "condition")
+    }
+
+    private fun addConditionRow(rowsPanel: JPanel, condition: String, target: String) {
+        val row = JPanel(GridLayout(1, 3, 6, 0))
+        row.border = JBUI.Borders.empty(0, 0, 6, 0)
+        val conditionField = JTextField(condition)
+        val targetField = JTextField(target)
+        val removeBtn = JButton("删除")
+        row.putClientProperty("condField", conditionField)
+        row.putClientProperty("targetField", targetField)
+        removeBtn.addActionListener {
+            rowsPanel.remove(row)
+            rowsPanel.revalidate()
+            rowsPanel.repaint()
+        }
+        row.add(conditionField)
+        row.add(targetField)
+        row.add(removeBtn)
+        rowsPanel.add(row)
     }
 
     private fun updateNodeConfig(nodeId: String, updater: (NodeConfig) -> NodeConfig) {
         val wf = currentWorkflow ?: return
         currentWorkflow = wf.copy(nodes = wf.nodes.map { n -> if (n.id == nodeId) n.copy(config = updater(n.config)) else n })
-        canvas.setWorkflow(currentWorkflow!!)
+        canvas.setWorkflow(currentWorkflow!!, autoLayout = false)
     }
 
 
