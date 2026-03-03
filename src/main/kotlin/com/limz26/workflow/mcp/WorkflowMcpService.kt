@@ -89,15 +89,25 @@ class WorkflowMcpService {
         if (engine != null && runningPort == port) return
         stopServer()
 
-        val appEngine = embeddedServer(CIO, host = "0.0.0.0", port = port) {
-            install(SSE)
-            routing {
-                mcp("/mcp") {
-                    mcpServer
+        val appEngine = try {
+            embeddedServer(CIO, host = "0.0.0.0", port = port) {
+                install(SSE)
+                routing {
+                    mcp("/mcp") {
+                        mcpServer
+                    }
                 }
             }
+        } catch (t: Throwable) {
+            throw IllegalStateException("MCP 运行时依赖缺失或不兼容，请检查插件打包产物（${t::class.simpleName}: ${t.message}）", t)
         }
-        appEngine.start(wait = false)
+
+        try {
+            appEngine.start(wait = false)
+        } catch (t: Throwable) {
+            throw IllegalStateException("MCP 服务启动失败（${t::class.simpleName}: ${t.message}）", t)
+        }
+
         engine = appEngine
         runningPort = port
     }
