@@ -58,6 +58,25 @@ class WorkflowMcpServiceTest {
     }
 
 
+
+    @Test
+    fun `create workflow initializes folder and workflow json`() {
+        val service = WorkflowMcpService()
+        val projectDir = Files.createTempDirectory("workflow-create-test").toFile()
+
+        val created = service.createWorkflow(projectDir.absolutePath, "My New Workflow")
+
+        val workflowDir = File(created.workflowDirPath)
+        assertTrue(workflowDir.exists())
+        assertTrue(File(workflowDir, "nodes").isDirectory)
+        assertTrue(File(workflowDir, "workflow.json").isFile)
+
+        val loaded = gson.fromJson(File(workflowDir, "workflow.json").readText(), WorkflowDefinition::class.java)
+        assertEquals("My New Workflow", loaded.name)
+        assertEquals(2, loaded.nodes.size)
+        assertEquals(1, loaded.edges.size)
+    }
+
     @Test
     fun `list workflows accepts workflows directory path directly`() {
         val service = WorkflowMcpService()

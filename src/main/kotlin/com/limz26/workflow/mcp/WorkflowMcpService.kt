@@ -58,6 +58,12 @@ class WorkflowMcpService {
         val levels: Int
     )
 
+    data class WorkflowCreateResult(
+        val workflowName: String,
+        val workflowDirPath: String,
+        val workflowJson: String
+    )
+
     data class WorkflowRunResult(
         val success: Boolean,
         val logs: List<String>,
@@ -112,6 +118,22 @@ class WorkflowMcpService {
         ) { request ->
             val basePath = request.optionalStringArg("projectBasePath")
             asToolResult(listWorkflows(basePath))
+        }
+
+        server.addTool(
+            name = "workflow_create",
+            description = "新建工作流。默认在 IDE 当前项目路径下的 workflows 目录创建工作流文件夹并初始化 workflow.json。",
+            inputSchema = ToolSchema(
+                properties = buildJsonObject {
+                    put("projectBasePath", schemaString("项目根目录绝对路径（可选；为空时默认 IDE 当前打开项目路径）"))
+                    put("workflowName", schemaString("工作流名称（必填）"))
+                },
+                required = listOf("workflowName")
+            )
+        ) { request ->
+            val basePath = request.optionalStringArg("projectBasePath")
+            val workflowName = request.requireStringArg("workflowName")
+            asToolResult(createWorkflow(basePath, workflowName))
         }
 
         server.addTool(
@@ -383,6 +405,47 @@ class WorkflowMcpService {
         if (configuredPath.isNotEmpty()) return configuredPath
 
         throw IllegalArgumentException("projectBasePath 为空且无法获取 IDE 当前项目路径，请显式传入 projectBasePath")
+    }
+
+    fun createWorkflow(projectBasePath: String?, workflowName: String): WorkflowCreateResult {
+        val name = workflowName.trim()
+        require(name.isNotEmpty()) { "workflowName 不能为空" }
+
+        val basePath = resolveProjectBasePath(projectBasePath)
+        val workflowsDir = File(basePath, "workflows").apply { mkdirs() }
+        val folderName = name.lowercase()
+            .replace(Regex("[^a-z0-9\-_]+"), "-")
+            .trim('-')
+            .ifEmpty { "workflow-${UUID.randomUUID().toString().take(8)}" }
+        val workflowDir = File(workflowsDir, folderName)
+        require(!workflowDir.exists()) { "工作流目录已存在: ${workflowDir.absolutePath}" }
+
+        workflowDir.mkdirs()
+        File(workflowDir, "nodes").mkdirs()
+
+        val startId = "start_${UUID.randomUUID().toString().take(8)}"
+        val endId = "end_${UUID.randomUUID().toString().take(8)}"
+
+        val definition = WorkflowDefinition(
+            id = UUID.randomUUID().toString(),
+            name = name,
+            description = "",
+            nodes = listOf(
+                NodeDefinition(startId, "start", "开始", PositionDefinition(0, 0), NodeConfigDefinition()),
+                NodeDefinition(endId, "end", "结束", PositionDefinition(280, 0), NodeConfigDefinition())
+            ),
+            edges = listOf(EdgeDefinition(UUID.randomUUID().toString(), startId, endId)),
+            variables = emptyMap()
+        )
+
+        val workflowJson = gson.toJson(definition)
+        File(workflowDir, "workflow.json").writeText(workflowJson)
+
+        return WorkflowCreateResult(
+            workflowName = name,
+            workflowDirPath = workflowDir.absolutePath,
+            workflowJson = workflowJson
+        )
     }
 
     fun readWorkflowJson(workflowDirPath: String): String {
