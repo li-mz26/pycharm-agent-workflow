@@ -68,6 +68,7 @@ enum class NodeType(val value: String) {
  */
 data class NodeConfig(
     val code: String? = null,                    // code 节点
+    val codeFile: String? = null,                // code 节点脚本路径
     val prompt: String? = null,                  // agent 节点
     val promptTemplate: String? = null,          // agent 节点模板
     val systemPrompt: String? = null,            // agent 节点 system prompt
@@ -85,6 +86,7 @@ data class NodeConfig(
     fun toJson(): String {
         val fields = mutableListOf<String>()
         code?.let { fields.add("\"code\": \"${escapeJson(it)}\"") }
+        codeFile?.let { fields.add("\"codeFile\": \"${escapeJson(it)}\"") }
         prompt?.let { fields.add("\"prompt\": \"${escapeJson(it)}\"") }
         promptTemplate?.let { fields.add("\"promptTemplate\": \"${escapeJson(it)}\"") }
         systemPrompt?.let { fields.add("\"systemPrompt\": \"${escapeJson(it)}\"") }

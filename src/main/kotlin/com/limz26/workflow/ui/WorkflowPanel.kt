@@ -22,6 +22,8 @@ import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.Font
 import java.time.LocalTime
+import java.awt.event.KeyAdapter
+import java.awt.event.KeyEvent
 import javax.swing.*
 import javax.swing.border.MatteBorder
 
@@ -65,6 +67,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     private val workflowComboModel = DefaultComboBoxModel<String>()
     private val workflowCombo = JComboBox(workflowComboModel)
     private val consoleWorkflowLabel = JLabel("workflow")
+    private var selectedNodeIdForEditor: String? = null
 
     // 可视化底部 console 面板
     private val testInputArea = JBTextArea().apply {
@@ -192,14 +195,19 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
                     position = Position(nodeDef.position.x, nodeDef.position.y),
                     config = NodeConfig(
                         code = nodeDef.config.code,
+                        codeFile = nodeDef.config.codeFile,
                         prompt = nodeDef.config.prompt,
+                        promptTemplate = nodeDef.config.promptTemplate,
+                        systemPrompt = nodeDef.config.systemPrompt,
+                        apiEndpoint = nodeDef.config.apiEndpoint,
+                        apiKey = nodeDef.config.apiKey,
                         model = nodeDef.config.model,
                         inputs = nodeDef.config.inputs,
                         outputs = nodeDef.config.outputs
                     )
                 )
             },
-            edges = def.edges.map { WorkflowEdge(source = it.source, target = it.target) },
+            edges = def.edges.map { WorkflowEdge(id = it.id, source = it.source, target = it.target, condition = it.condition) },
             variables = def.variables.mapValues { Variable(it.key, it.value.type) }
         )
     }
@@ -284,14 +292,129 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         consolePanel.add(runHeader, BorderLayout.NORTH)
         consolePanel.add(tabs, BorderLayout.CENTER)
 
+        val rightEditor = createNodeConfigPanel()
+        canvas.setOnNodeSelected { node ->
+            selectedNodeIdForEditor = node?.id
+            updateNodeConfigPanel(rightEditor, node)
+        }
+
+        val canvasWithEditor = JBSplitter(false, 0.72f)
+        canvasWithEditor.firstComponent = canvas
+        canvasWithEditor.secondComponent = rightEditor
+
         val splitter = JBSplitter(true, 0.68f)
-        splitter.firstComponent = canvas
+        splitter.firstComponent = canvasWithEditor
         splitter.secondComponent = consolePanel
 
         panel.add(topBar, BorderLayout.NORTH)
         panel.add(splitter, BorderLayout.CENTER)
         return panel
     }
+
+    private fun createNodeConfigPanel(): JPanel {
+        val panel = JPanel(BorderLayout())
+        panel.border = BorderFactory.createTitledBorder("节点配置")
+        val area = JTextArea("请选择一个节点进行配置").apply {
+            lineWrap = true
+            wrapStyleWord = true
+            isEditable = false
+        }
+        panel.putClientProperty("configArea", area)
+        panel.add(JBScrollPane(area), BorderLayout.CENTER)
+        return panel
+    }
+
+    private fun updateNodeConfigPanel(panel: JPanel, node: NodeDefinition?) {
+        val area = panel.getClientProperty("configArea") as? JTextArea ?: return
+        if (node == null) {
+            area.text = "请选择一个节点进行配置"
+            return
+        }
+        when (node.type) {
+            "code" -> showCodeNodeEditor(area, node)
+            "agent" -> showAgentNodeEditor(area, node)
+            "condition" -> showConditionNodeEditor(area, node)
+            else -> area.text = "节点 ${node.name} (${node.type}) 暂无可编辑高级配置"
+        }
+    }
+
+    private fun showCodeNodeEditor(area: JTextArea, node: NodeDefinition) {
+        area.isEditable = true
+        area.text = node.config.codeFile ?: "nodes/${node.id}.py"
+        area.toolTipText = "编辑 code 节点挂载脚本路径，回车后生效"
+        area.addKeyListener(object : KeyAdapter() {
+            override fun keyReleased(e: KeyEvent) {
+                if (e.keyCode == KeyEvent.VK_ENTER) {
+                    val path = area.text.trim()
+                    updateNodeConfig(node.id) { cfg -> cfg.copy(codeFile = path) }
+                }
+            }
+        })
+    }
+
+    private fun showAgentNodeEditor(area: JTextArea, node: NodeDefinition) {
+        area.isEditable = true
+        area.text = listOf(
+            "apiEndpoint=${node.config.apiEndpoint.orEmpty()}",
+            "apiKey=${node.config.apiKey.orEmpty()}",
+            "model=${node.config.model.orEmpty()}",
+            "systemPrompt=${node.config.systemPrompt.orEmpty()}",
+            "promptTemplate=${node.config.promptTemplate.orEmpty()}"
+        ).joinToString("\n")
+        area.toolTipText = "按 key=value 编辑（每行一个），回车后生效"
+        area.addKeyListener(object : KeyAdapter() {
+            override fun keyReleased(e: KeyEvent) {
+                if (e.keyCode == KeyEvent.VK_ENTER) {
+                    val map = area.text.lines().mapNotNull {
+                        val idx = it.indexOf('=')
+                        if (idx <= 0) null else it.substring(0, idx).trim() to it.substring(idx + 1)
+                    }.toMap()
+                    updateNodeConfig(node.id) { cfg ->
+                        cfg.copy(
+                            apiEndpoint = map["apiEndpoint"] ?: cfg.apiEndpoint,
+                            apiKey = map["apiKey"] ?: cfg.apiKey,
+                            model = map["model"] ?: cfg.model,
+                            systemPrompt = map["systemPrompt"] ?: cfg.systemPrompt,
+                            promptTemplate = map["promptTemplate"] ?: cfg.promptTemplate
+                        )
+                    }
+                }
+            }
+        })
+    }
+
+    private fun showConditionNodeEditor(area: JTextArea, node: NodeDefinition) {
+        area.isEditable = true
+        val lines = currentWorkflow?.edges?.filter { it.source == node.id }?.joinToString("\n") {
+            "${it.condition.orEmpty()}:${it.target}"
+        }.orEmpty()
+        area.text = lines
+        area.toolTipText = "每行 condition:targetNodeId，回车后生效"
+        area.addKeyListener(object : KeyAdapter() {
+            override fun keyReleased(e: KeyEvent) {
+                if (e.keyCode == KeyEvent.VK_ENTER) {
+                    val parsed = area.text.lines().mapNotNull { line ->
+                        val idx = line.indexOf(':')
+                        if (idx < 0) null else line.substring(0, idx).trim() to line.substring(idx + 1).trim()
+                    }
+                    val wf = currentWorkflow ?: return
+                    val keep = wf.edges.filterNot { it.source == node.id }
+                    val newEdges = parsed.map { (cond, target) ->
+                        WorkflowEdge(source = node.id, target = target, condition = cond.ifBlank { null })
+                    }
+                    currentWorkflow = wf.copy(edges = keep + newEdges)
+                    canvas.setWorkflow(currentWorkflow!!)
+                }
+            }
+        })
+    }
+
+    private fun updateNodeConfig(nodeId: String, updater: (NodeConfig) -> NodeConfig) {
+        val wf = currentWorkflow ?: return
+        currentWorkflow = wf.copy(nodes = wf.nodes.map { n -> if (n.id == nodeId) n.copy(config = updater(n.config)) else n })
+        canvas.setWorkflow(currentWorkflow!!)
+    }
+
 
     private fun onToggleMcpServer() {
         if (mcpService.isRunning()) {

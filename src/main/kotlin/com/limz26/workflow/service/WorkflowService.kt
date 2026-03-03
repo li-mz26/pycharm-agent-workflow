@@ -22,7 +22,7 @@ class WorkflowService {
         val validationErrors: List<String> = emptyList()
     )
 
-    fun runWorkflow(workflowDirPath: String): WorkflowExecutionResult {
+    fun runWorkflow(workflowDirPath: String, initialInput: Map<String, Any?> = emptyMap()): WorkflowExecutionResult {
         val loader = WorkflowLoader()
         val loaded = loader.load(File(workflowDirPath)) ?: return WorkflowExecutionResult(
             success = false,
@@ -60,7 +60,7 @@ class WorkflowService {
 
             try {
                 val result = when (nodeType) {
-                    NodeType.START -> mapOf("started" to true)
+                    NodeType.START -> if (initialInput.isEmpty()) mapOf("started" to true) else initialInput
                     NodeType.END -> mergedInputs
                     NodeType.CODE -> executeCodeNode(loaded, node, mergedInputs)
                     NodeType.AGENT -> executeAgentNode(node, mergedInputs)
@@ -247,6 +247,7 @@ print(json.dumps(result, ensure_ascii=False))
                     position = Position(it.position.x, it.position.y),
                     config = NodeConfig(
                         code = it.config.code,
+                        codeFile = it.config.codeFile,
                         prompt = it.config.prompt,
                         promptTemplate = it.config.promptTemplate,
                         systemPrompt = it.config.systemPrompt,

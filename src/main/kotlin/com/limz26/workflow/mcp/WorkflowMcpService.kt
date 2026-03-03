@@ -322,12 +322,16 @@ class WorkflowMcpService {
             inputSchema = ToolSchema(
                 properties = buildJsonObject {
                     put("workflowDirPath", buildJsonObject { put("type", JsonPrimitive("string")) })
+                    put("workflowInput", buildJsonObject { put("type", JsonPrimitive("object")) })
                 },
                 required = listOf("workflowDirPath")
             )
         ) { request ->
             val dir = request.requireStringArg("workflowDirPath")
-            asToolResult(runWorkflow(dir))
+            val workflowInput = request.arguments?.get("workflowInput")?.let { gson.fromJson(it.toString(), Map::class.java) as? Map<*, *> }
+                ?.entries?.associate { it.key.toString() to it.value }
+                ?: emptyMap()
+            asToolResult(runWorkflow(dir, workflowInput))
         }
 
         return server
@@ -689,8 +693,8 @@ class WorkflowMcpService {
         return levels
     }
 
-    fun runWorkflow(workflowDirPath: String): WorkflowRunResult {
-        val result = workflowService.runWorkflow(workflowDirPath)
+    fun runWorkflow(workflowDirPath: String, workflowInput: Map<String, Any?> = emptyMap()): WorkflowRunResult {
+        val result = workflowService.runWorkflow(workflowDirPath, workflowInput)
         return WorkflowRunResult(
             success = result.success,
             logs = result.logs,

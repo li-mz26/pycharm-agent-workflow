@@ -22,6 +22,7 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
     private var workflow: Workflow? = null
     private var selectedNode: String? = null
     private var hoverNode: String? = null
+    private var nodeSelectionListener: ((NodeDefinition?) -> Unit)? = null
 
     // 视图状态
     private var scale = 1.0
@@ -82,8 +83,10 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
                             isDraggingNode = true
                             dragNodeId = node.id
                             selectedNode = node.id
+                            nodeSelectionListener?.invoke(node)
                         } else {
                             selectedNode = null
+                            nodeSelectionListener?.invoke(null)
                         }
                         repaint()
                     }
@@ -565,7 +568,12 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
                     position = PositionDefinition(node.position.x, node.position.y),
                     config = NodeConfigDefinition(
                         code = node.config.code,
+                        codeFile = node.config.codeFile,
                         prompt = node.config.prompt,
+                        promptTemplate = node.config.promptTemplate,
+                        systemPrompt = node.config.systemPrompt,
+                        apiEndpoint = node.config.apiEndpoint,
+                        apiKey = node.config.apiKey,
                         model = node.config.model,
                         condition = node.config.condition,
                         method = node.config.method,
@@ -589,6 +597,10 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
                 VariableDefinition(type = v.type, default = v.defaultValue)
             }
         )
+    }
+
+    fun setOnNodeSelected(listener: (NodeDefinition?) -> Unit) {
+        nodeSelectionListener = listener
     }
 
     /**
