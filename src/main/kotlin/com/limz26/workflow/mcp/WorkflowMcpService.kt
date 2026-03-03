@@ -7,15 +7,8 @@ import com.intellij.openapi.components.service
 import com.limz26.workflow.agent.WorkflowAgent
 import com.limz26.workflow.model.*
 import com.limz26.workflow.settings.AppSettings
-import io.ktor.server.application.install
-import io.ktor.server.cio.CIO
-import io.ktor.server.engine.EmbeddedServer
-import io.ktor.server.engine.embeddedServer
-import io.ktor.server.routing.routing
-import io.ktor.server.sse.SSE
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
-import io.modelcontextprotocol.kotlin.sdk.server.mcp
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
@@ -38,13 +31,8 @@ class WorkflowMcpService {
 
     private val gson: Gson = GsonBuilder().setPrettyPrinting().create()
 
-    @Volatile
-    private var engine: EmbeddedServer<*, *>? = null
-
-    @Volatile
-    private var runningPort: Int? = null
-
     private val mcpServer: Server by lazy { createMcpServer() }
+    private val runtime: WorkflowMcpRuntime by lazy { WorkflowMcpRuntime { mcpServer } }
 
     data class WorkflowSummary(
         val name: String,
@@ -79,34 +67,16 @@ class WorkflowMcpService {
         return McpServerConfig(settings.mcpServerEnabled, settings.mcpServerPort)
     }
 
-    fun isRunning(): Boolean = engine != null
+    fun isRunning(): Boolean = runtime.isRunning()
 
-    fun getRunningPort(): Int? = runningPort
+    fun getRunningPort(): Int? = runtime.getRunningPort()
 
-    @Synchronized
     fun startServer(port: Int) {
-        require(port in 1..65535) { "端口号无效: $port" }
-        if (engine != null && runningPort == port) return
-        stopServer()
-
-        val appEngine = embeddedServer(CIO, host = "0.0.0.0", port = port) {
-            install(SSE)
-            routing {
-                mcp("/mcp") {
-                    mcpServer
-                }
-            }
-        }
-        appEngine.start(wait = false)
-        engine = appEngine
-        runningPort = port
+        runtime.start(port)
     }
 
-    @Synchronized
     fun stopServer() {
-        engine?.stop(500, 1000)
-        engine = null
-        runningPort = null
+        runtime.stop()
     }
 
     private fun createMcpServer(): Server {

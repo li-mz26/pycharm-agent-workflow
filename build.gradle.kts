@@ -1,6 +1,7 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import org.jetbrains.intellij.tasks.PrepareSandboxTask
+import org.gradle.jvm.tasks.Jar
 
 plugins {
     id("java")
@@ -23,11 +24,10 @@ repositories {
 
 dependencies {
     implementation("com.google.code.gson:gson:2.10.1")
-    // Use JVM-targeted artifacts explicitly to ensure classes are packaged into IntelliJ plugin sandbox/lib
-    implementation("io.modelcontextprotocol:kotlin-sdk-server-jvm:0.8.3")
-    implementation("io.modelcontextprotocol:kotlin-sdk-core-jvm:0.8.3")
+    // MCP server with Ktor (follow kotlin-sdk docs)
     implementation("io.ktor:ktor-server-cio:3.2.3")
     implementation("io.ktor:ktor-server-sse:3.2.3")
+    implementation("io.modelcontextprotocol:kotlin-sdk-server:0.8.4")
 
     // Test dependencies
     testImplementation("junit:junit:4.13.2")
@@ -57,6 +57,18 @@ tasks {
     // Workaround: avoid flaky online self-version check in restricted networks
     withType<org.jetbrains.intellij.tasks.InitializeIntelliJPluginTask> {
         enabled = false
+    }
+
+
+
+    // IMPORTANT: users may install a single plugin .jar directly (without lib/ directory).
+    // Embed runtime dependencies into the plugin jar so PluginClassLoader can resolve MCP/Ktor classes.
+    withType<Jar> {
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+        from({
+            configurations.runtimeClasspath.get().map { zipTree(it) }
+        })
+        exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
     }
 
     // Ensure external runtime dependencies are copied into plugin sandbox/lib to avoid PluginClassLoader CNFEs.

@@ -107,8 +107,10 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
             try {
                 mcpService.startServer(settings.mcpServerPort)
                 appendWorkflowLog("MCP 服务已启动: http://127.0.0.1:${settings.mcpServerPort}/mcp (transport=streamable_http)")
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                settings.mcpServerEnabled = false
                 appendWorkflowLog("MCP 服务启动失败: ${e.message}")
+                syncMcpButtonText()
             }
         }
     }
@@ -319,7 +321,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
             mcpService.startServer(port)
             appendWorkflowLog("MCP 服务已启动: http://127.0.0.1:$port/mcp (transport=streamable_http)")
             syncMcpButtonText()
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Messages.showErrorDialog(project, "启动失败: ${e.message}", "MCP 启动失败")
             appendWorkflowLog("MCP 服务启动失败: ${e.message}")
             settings.mcpServerEnabled = false
@@ -336,7 +338,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         if (isChatCollapsed) {
             mainSplitter.firstComponent = JPanel()
             mainSplitter.proportion = 0.0f
-            mainSplitter.dividerWidth = 0
+            mainSplitter.dividerWidth = 1
             chatToggleButton.text = "展开对话"
         } else {
             mainSplitter.firstComponent = createLeftPanel()

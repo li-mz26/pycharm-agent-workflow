@@ -1,0 +1,57 @@
+package com.limz26.workflow.mcp
+
+import io.ktor.server.cio.CIO
+import io.ktor.server.engine.EmbeddedServer
+import io.ktor.server.engine.embeddedServer
+import io.modelcontextprotocol.kotlin.sdk.server.Server
+import io.modelcontextprotocol.kotlin.sdk.server.mcpStreamableHttp
+
+/**
+ * Pure Kotlin MCP runtime that can be validated without IntelliJ startup.
+ */
+class WorkflowMcpRuntime(
+    private val serverProvider: () -> Server
+) {
+    @Volatile
+    private var engine: EmbeddedServer<*, *>? = null
+
+    @Volatile
+    private var runningPort: Int? = null
+
+    fun isRunning(): Boolean = engine != null
+
+    fun getRunningPort(): Int? = runningPort
+
+    @Synchronized
+    fun start(port: Int) {
+        require(port in 1..65535) { "端口号无效: $port" }
+        if (engine != null && runningPort == port) return
+        stop()
+
+        val appEngine = try {
+            embeddedServer(CIO, host = "0.0.0.0", port = port) {
+                mcpStreamableHttp {
+                    serverProvider()
+                }
+            }
+        } catch (t: Throwable) {
+            throw IllegalStateException("MCP 运行时依赖缺失或不兼容，请检查插件打包产物（${t::class.simpleName}: ${t.message}）", t)
+        }
+
+        try {
+            appEngine.start(wait = false)
+        } catch (t: Throwable) {
+            throw IllegalStateException("MCP 服务启动失败（${t::class.simpleName}: ${t.message}）", t)
+        }
+
+        engine = appEngine
+        runningPort = port
+    }
+
+    @Synchronized
+    fun stop() {
+        engine?.stop(500, 1000)
+        engine = null
+        runningPort = null
+    }
+}
