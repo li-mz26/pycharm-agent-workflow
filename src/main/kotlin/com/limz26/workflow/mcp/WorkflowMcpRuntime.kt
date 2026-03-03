@@ -1,10 +1,14 @@
 package com.limz26.workflow.mcp
 
+import io.ktor.serialization.kotlinx.json.json
+import io.ktor.server.application.install
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
+import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.mcpStreamableHttp
+import io.modelcontextprotocol.kotlin.sdk.shared.McpJson
 
 /**
  * Pure Kotlin MCP runtime that can be validated without IntelliJ startup.
@@ -30,6 +34,9 @@ class WorkflowMcpRuntime(
 
         val appEngine = try {
             embeddedServer(CIO, host = "0.0.0.0", port = port) {
+                install(ContentNegotiation) {
+                    json(McpJson)
+                }
                 mcpStreamableHttp {
                     serverProvider()
                 }

@@ -27,11 +27,16 @@ dependencies {
     // MCP server with Ktor (follow kotlin-sdk docs)
     implementation("io.ktor:ktor-server-cio:3.2.3")
     implementation("io.ktor:ktor-server-sse:3.2.3")
+    implementation("io.ktor:ktor-server-content-negotiation:3.2.3")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:3.2.3")
     implementation("io.modelcontextprotocol:kotlin-sdk-server:0.8.4")
 
     // Test dependencies
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlin:kotlin-test:2.2.0")
+    testImplementation("io.ktor:ktor-client-core-jvm:3.2.3")
+    testImplementation("io.ktor:ktor-client-cio-jvm:3.2.3")
+    testImplementation("io.modelcontextprotocol:kotlin-sdk-client:0.8.4")
 }
 
 intellij {
