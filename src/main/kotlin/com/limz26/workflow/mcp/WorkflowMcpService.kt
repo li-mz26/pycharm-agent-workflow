@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
+import com.intellij.openapi.project.ProjectManager
 import com.limz26.workflow.agent.WorkflowAgent
 import com.limz26.workflow.model.*
 import com.limz26.workflow.settings.AppSettings
@@ -98,18 +99,18 @@ class WorkflowMcpService {
 
         server.addTool(
             name = "workflows_list",
-            description = "列出项目下可用工作流。仅传入项目根路径，服务端会扫描并返回摘要信息。",
+            description = "列出项目下可用工作流。projectBasePath 可选；为空时自动使用 IDE 当前打开项目路径。",
             inputSchema = ToolSchema(
                 properties = buildJsonObject {
                     put("projectBasePath", buildJsonObject {
                         put("type", JsonPrimitive("string"))
-                        put("description", JsonPrimitive("项目根目录绝对路径"))
+                        put("description", JsonPrimitive("项目根目录绝对路径（可选；为空时默认 IDE 当前打开项目路径）"))
                     })
                 },
-                required = listOf("projectBasePath")
+                required = emptyList()
             )
         ) { request ->
-            val basePath = request.requireStringArg("projectBasePath")
+            val basePath = request.optionalStringArg("projectBasePath")
             asToolResult(listWorkflows(basePath))
         }
 
@@ -349,11 +350,28 @@ class WorkflowMcpService {
         put("description", JsonPrimitive(description))
     }
 
-    fun listWorkflows(projectBasePath: String): List<WorkflowSummary> {
+    fun listWorkflows(projectBasePath: String?): List<WorkflowSummary> {
         val loader = WorkflowLoader()
-        return loader.scanWorkflows(File(projectBasePath)).map {
+        val basePath = resolveProjectBasePath(projectBasePath)
+        return loader.scanWorkflows(File(basePath)).map {
             WorkflowSummary(it.name, it.baseDir.absolutePath, it.definition.nodes.size)
         }
+    }
+
+
+    private fun resolveProjectBasePath(projectBasePath: String?): String {
+        val provided = projectBasePath?.trim()
+        if (!provided.isNullOrEmpty()) return provided
+
+        val openProjectPath = ProjectManager.getInstance().openProjects
+            .firstOrNull { !it.basePath.isNullOrBlank() }
+            ?.basePath
+        if (!openProjectPath.isNullOrBlank()) return openProjectPath
+
+        val configuredPath = service<AppSettings>().workflowPath.trim()
+        if (configuredPath.isNotEmpty()) return configuredPath
+
+        throw IllegalArgumentException("projectBasePath 为空且无法获取 IDE 当前项目路径，请显式传入 projectBasePath")
     }
 
     fun readWorkflowJson(workflowDirPath: String): String {
