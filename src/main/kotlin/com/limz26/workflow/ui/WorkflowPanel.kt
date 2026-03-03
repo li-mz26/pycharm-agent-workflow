@@ -338,7 +338,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         if (isChatCollapsed) {
             mainSplitter.firstComponent = JPanel()
             mainSplitter.proportion = 0.0f
-            mainSplitter.dividerWidth = 0
+            mainSplitter.dividerWidth = 1
             chatToggleButton.text = "展开对话"
         } else {
             mainSplitter.firstComponent = createLeftPanel()
