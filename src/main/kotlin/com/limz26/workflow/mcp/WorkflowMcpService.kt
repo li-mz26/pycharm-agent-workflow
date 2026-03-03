@@ -7,10 +7,12 @@ import com.intellij.openapi.components.service
 import com.limz26.workflow.agent.WorkflowAgent
 import com.limz26.workflow.model.*
 import com.limz26.workflow.settings.AppSettings
+import io.ktor.server.application.install
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.routing.routing
+import io.ktor.server.sse.SSE
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
 import io.modelcontextprotocol.kotlin.sdk.server.mcp
@@ -89,6 +91,7 @@ class WorkflowMcpService {
 
         val appEngine = try {
             embeddedServer(CIO, host = "0.0.0.0", port = port) {
+                install(SSE)
                 routing {
                     mcp("/mcp") {
                         mcpServer
