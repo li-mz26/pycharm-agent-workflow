@@ -1,6 +1,7 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import org.jetbrains.intellij.tasks.PrepareSandboxTask
+import org.gradle.jvm.tasks.Jar
 
 plugins {
     id("java")
@@ -57,6 +58,18 @@ tasks {
     // Workaround: avoid flaky online self-version check in restricted networks
     withType<org.jetbrains.intellij.tasks.InitializeIntelliJPluginTask> {
         enabled = false
+    }
+
+
+    // Package MCP SDK classes directly into plugin jar to avoid ClassNotFound in IDE when lib copying differs by install path.
+    withType<Jar> {
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+        from({
+            configurations.runtimeClasspath.get()
+                .filter { it.name.startsWith("kotlin-sdk-server-jvm") || it.name.startsWith("kotlin-sdk-core-jvm") }
+                .map { zipTree(it) }
+        })
+        exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
     }
 
     // Ensure external runtime dependencies are copied into plugin sandbox/lib to avoid PluginClassLoader CNFEs.
