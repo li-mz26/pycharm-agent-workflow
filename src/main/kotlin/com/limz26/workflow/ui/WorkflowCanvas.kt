@@ -9,7 +9,11 @@ import java.awt.*
 import java.awt.GraphicsEnvironment
 import java.awt.event.*
 import java.io.File
+import java.util.UUID
 import javax.swing.JPanel
+import javax.swing.JMenu
+import javax.swing.JMenuItem
+import javax.swing.JPopupMenu
 import javax.swing.SwingUtilities
 
 /**
@@ -35,6 +39,10 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
     private var dragNodeId: String? = null
     private var lastMouseX = 0
     private var lastMouseY = 0
+
+    private var creatingEdgeSourceId: String? = null
+    private var edgePreviewMouse: Point? = null
+    private var popupCanvasPoint: Point? = null
 
     private val nodeColors = mapOf(
         "start" to Color(76, 175, 80),
@@ -78,22 +86,41 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
                     }
                     // 左键：检查是否点击节点
                     SwingUtilities.isLeftMouseButton(e) -> {
-                        val node = findNodeAt(e.x, e.y)
-                        if (node != null) {
-                            isDraggingNode = true
-                            dragNodeId = node.id
-                            selectedNode = node.id
-                            nodeSelectionListener?.invoke(node)
+                        val edgeSource = findEdgeHandleAt(e.x, e.y)
+                        if (edgeSource != null) {
+                            creatingEdgeSourceId = edgeSource.id
+                            edgePreviewMouse = screenToCanvas(e.x, e.y)
+                            selectedNode = edgeSource.id
+                            nodeSelectionListener?.invoke(edgeSource)
                         } else {
-                            selectedNode = null
-                            nodeSelectionListener?.invoke(null)
+                            val node = findNodeAt(e.x, e.y)
+                            if (node != null) {
+                                isDraggingNode = true
+                                dragNodeId = node.id
+                                selectedNode = node.id
+                                nodeSelectionListener?.invoke(node)
+                            } else {
+                                selectedNode = null
+                                nodeSelectionListener?.invoke(null)
+                            }
                         }
                         repaint()
+                    }
+                    SwingUtilities.isRightMouseButton(e) -> {
+                        popupCanvasPoint = screenToCanvas(e.x, e.y)
+                        showContextMenu(e)
                     }
                 }
             }
 
             override fun mouseReleased(e: MouseEvent) {
+                if (creatingEdgeSourceId != null) {
+                    finishEdgeCreation(e.x, e.y)
+                }
+                if (e.isPopupTrigger) {
+                    popupCanvasPoint = screenToCanvas(e.x, e.y)
+                    showContextMenu(e)
+                }
                 isPanning = false
                 isDraggingNode = false
                 dragNodeId = null
@@ -128,6 +155,10 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
                     // 左键拖拽：移动节点
                     isDraggingNode && dragNodeId != null -> {
                         moveNode(dragNodeId!!, dx / scale, dy / scale)
+                        repaint()
+                    }
+                    creatingEdgeSourceId != null -> {
+                        edgePreviewMouse = screenToCanvas(e.x, e.y)
                         repaint()
                     }
                 }
@@ -285,6 +316,8 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
             drawNode(g2d, node, node.id == selectedNode, node.id == hoverNode)
         }
 
+        drawEdgePreview(g2d, wf)
+
         // 恢复原始变换
         g2d.transform = originalTransform
 
@@ -436,6 +469,12 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
         g.font = blockFont(Font.BOLD, 12)
         g.drawString(node.type.uppercase(), x + 38, y + 50)
 
+        // 底部连接锚点（用于拖拽创建边）
+        g.color = Color.WHITE
+        g.fillOval(x + w / 2 - 5, y + h - 5, 10, 10)
+        g.color = color.darker()
+        g.drawOval(x + w / 2 - 5, y + h - 5, 10, 10)
+
         // 选中时显示额外信息
         if (isSelected) {
             drawNodeDetails(g, node, x, y + h + 5)
@@ -555,6 +594,139 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
         }
     }
 
+
+    private fun drawEdgePreview(g: Graphics2D, wf: WorkflowDefinition) {
+        val sourceId = creatingEdgeSourceId ?: return
+        val mouse = edgePreviewMouse ?: return
+        val source = wf.nodes.find { it.id == sourceId } ?: return
+        val start = getConnectionPoint(source, true)
+        g.color = Color(255, 193, 7)
+        g.stroke = BasicStroke(2f)
+        g.drawLine(start.x, start.y, mouse.x, mouse.y)
+    }
+
+    private fun findEdgeHandleAt(screenX: Int, screenY: Int): NodeDefinition? {
+        val point = screenToCanvas(screenX, screenY)
+        val wf = loadedWorkflow?.definition ?: workflow?.let { convertToDefinition(it) } ?: return null
+        return wf.nodes.find { node ->
+            val handleX = node.position.x + nodeSize.width / 2
+            val handleY = node.position.y + nodeSize.height
+            val dx = point.x - handleX
+            val dy = point.y - handleY
+            dx * dx + dy * dy <= 100
+        }
+    }
+
+    private fun finishEdgeCreation(screenX: Int, screenY: Int) {
+        val sourceId = creatingEdgeSourceId
+        creatingEdgeSourceId = null
+        edgePreviewMouse = null
+        if (sourceId == null) return
+
+        val target = findNodeAt(screenX, screenY) ?: return
+        if (target.id == sourceId) return
+
+        val def = loadedWorkflow?.definition ?: workflow?.let { convertToDefinition(it) } ?: return
+        if (def.edges.any { it.source == sourceId && it.target == target.id }) return
+
+        val newEdge = EdgeDefinition(UUID.randomUUID().toString(), sourceId, target.id)
+        val newDef = def.copy(edges = def.edges + newEdge)
+        applyDefinition(newDef)
+    }
+
+    private fun showContextMenu(e: MouseEvent) {
+        val popup = JPopupMenu()
+        val edge = findEdgeAt(e.x, e.y)
+        if (edge != null) {
+            popup.add(JMenuItem("删除边").apply {
+                addActionListener { deleteEdge(edge.id) }
+            })
+        } else {
+            val addNodeMenu = JMenu("添加节点")
+            listOf("code" to "代码节点", "agent" to "Agent节点", "condition" to "条件节点", "http" to "HTTP节点", "variable" to "变量节点").forEach { (type, label) ->
+                addNodeMenu.add(JMenuItem(label).apply {
+                    addActionListener { addNodeAtPopup(type, label) }
+                })
+            }
+            popup.add(addNodeMenu)
+        }
+        popup.show(this, e.x, e.y)
+    }
+
+    private fun addNodeAtPopup(type: String, displayName: String) {
+        val canvasPoint = popupCanvasPoint ?: Point(120, 120)
+        val def = loadedWorkflow?.definition ?: workflow?.let { convertToDefinition(it) } ?: return
+        val node = NodeDefinition(
+            id = "node_${UUID.randomUUID().toString().take(8)}",
+            type = type,
+            name = displayName,
+            position = PositionDefinition(canvasPoint.x, canvasPoint.y),
+            config = NodeConfigDefinition()
+        )
+        applyDefinition(def.copy(nodes = def.nodes + node))
+    }
+
+    private fun deleteEdge(edgeId: String) {
+        val def = loadedWorkflow?.definition ?: workflow?.let { convertToDefinition(it) } ?: return
+        applyDefinition(def.copy(edges = def.edges.filterNot { it.id == edgeId }))
+    }
+
+    private fun findEdgeAt(screenX: Int, screenY: Int): EdgeDefinition? {
+        val point = screenToCanvas(screenX, screenY)
+        val wf = loadedWorkflow?.definition ?: workflow?.let { convertToDefinition(it) } ?: return null
+
+        fun distanceToCurve(source: NodeDefinition, target: NodeDefinition): Double {
+            val start = getConnectionPoint(source, true)
+            val end = getConnectionPoint(target, false)
+            val ctrl1 = Point(start.x, start.y + (end.y - start.y) / 2)
+            val ctrl2 = Point(end.x, start.y + (end.y - start.y) / 2)
+            var min = Double.MAX_VALUE
+            var prev = start
+            for (i in 1..20) {
+                val t = i / 20.0
+                val x = cubic(start.x.toDouble(), ctrl1.x.toDouble(), ctrl2.x.toDouble(), end.x.toDouble(), t)
+                val y = cubic(start.y.toDouble(), ctrl1.y.toDouble(), ctrl2.y.toDouble(), end.y.toDouble(), t)
+                val cur = Point(x.toInt(), y.toInt())
+                min = minOf(min, pointToSegmentDistance(point, prev, cur))
+                prev = cur
+            }
+            return min
+        }
+
+        return wf.edges.firstOrNull { edge ->
+            val source = wf.nodes.find { it.id == edge.source } ?: return@firstOrNull false
+            val target = wf.nodes.find { it.id == edge.target } ?: return@firstOrNull false
+            distanceToCurve(source, target) <= 8.0
+        }
+    }
+
+    private fun cubic(p0: Double, p1: Double, p2: Double, p3: Double, t: Double): Double {
+        val u = 1 - t
+        return u * u * u * p0 + 3 * u * u * t * p1 + 3 * u * t * t * p2 + t * t * t * p3
+    }
+
+    private fun pointToSegmentDistance(p: Point, a: Point, b: Point): Double {
+        val dx = (b.x - a.x).toDouble()
+        val dy = (b.y - a.y).toDouble()
+        if (dx == 0.0 && dy == 0.0) {
+            return p.distance(a)
+        }
+        val t = (((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)).coerceIn(0.0, 1.0)
+        val projX = a.x + t * dx
+        val projY = a.y + t * dy
+        return Point(projX.toInt(), projY.toInt()).distance(p)
+    }
+
+    private fun applyDefinition(newDefinition: WorkflowDefinition) {
+        if (loadedWorkflow != null) {
+            loadedWorkflow = loadedWorkflow?.copy(definition = newDefinition)
+        }
+        if (workflow != null) {
+            workflow = convertFromDefinition(newDefinition)
+        }
+        repaint()
+    }
+
     private fun convertToDefinition(workflow: Workflow): WorkflowDefinition {
         return WorkflowDefinition(
             id = workflow.id,
@@ -601,6 +773,42 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
 
     fun setOnNodeSelected(listener: (NodeDefinition?) -> Unit) {
         nodeSelectionListener = listener
+    }
+
+
+    private fun convertFromDefinition(def: WorkflowDefinition): Workflow {
+        return Workflow(
+            id = def.id,
+            name = def.name,
+            description = def.description,
+            nodes = def.nodes.map { node ->
+                WorkflowNode(
+                    id = node.id,
+                    type = NodeType.valueOf(node.type.uppercase()),
+                    name = node.name,
+                    position = Position(node.position.x, node.position.y),
+                    config = NodeConfig(
+                        code = node.config.code,
+                        codeFile = node.config.codeFile,
+                        prompt = node.config.prompt,
+                        promptTemplate = node.config.promptTemplate,
+                        systemPrompt = node.config.systemPrompt,
+                        apiEndpoint = node.config.apiEndpoint,
+                        apiKey = node.config.apiKey,
+                        model = node.config.model,
+                        condition = node.config.condition,
+                        method = node.config.method,
+                        url = node.config.url,
+                        headers = node.config.headers,
+                        value = node.config.value,
+                        inputs = node.config.inputs,
+                        outputs = node.config.outputs
+                    )
+                )
+            },
+            edges = def.edges.map { WorkflowEdge(it.id, it.source, it.target, it.condition) },
+            variables = def.variables.mapValues { Variable(it.key, it.value.type, it.value.default) }
+        )
     }
 
     /**
