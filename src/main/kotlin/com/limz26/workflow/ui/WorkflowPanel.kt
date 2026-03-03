@@ -106,7 +106,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         if (settings.mcpServerEnabled) {
             try {
                 mcpService.startServer(settings.mcpServerPort)
-                appendWorkflowLog("MCP 服务已启动: http://127.0.0.1:${settings.mcpServerPort}/mcp (transport=streamable_http)")
+                appendWorkflowLog("MCP 服务已启动: http://127.0.0.1:${settings.mcpServerPort}/ (transport=streamable_http)")
             } catch (e: Throwable) {
                 settings.mcpServerEnabled = false
                 appendWorkflowLog("MCP 服务启动失败: ${e.message}")
@@ -319,7 +319,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
             settings.mcpServerPort = port
             settings.mcpServerEnabled = true
             mcpService.startServer(port)
-            appendWorkflowLog("MCP 服务已启动: http://127.0.0.1:$port/mcp (transport=streamable_http)")
+            appendWorkflowLog("MCP 服务已启动: http://127.0.0.1:$port/ (transport=streamable_http)")
             syncMcpButtonText()
         } catch (e: Throwable) {
             Messages.showErrorDialog(project, "启动失败: ${e.message}", "MCP 启动失败")

@@ -7,12 +7,9 @@ import com.intellij.openapi.components.service
 import com.limz26.workflow.agent.WorkflowAgent
 import com.limz26.workflow.model.*
 import com.limz26.workflow.settings.AppSettings
-import io.ktor.server.application.install
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
-import io.ktor.server.routing.routing
-import io.ktor.server.sse.SSE
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
 import io.modelcontextprotocol.kotlin.sdk.server.mcp
@@ -43,8 +40,6 @@ class WorkflowMcpService {
 
     @Volatile
     private var runningPort: Int? = null
-
-    private val mcpServer: Server by lazy { createMcpServer() }
 
     data class WorkflowSummary(
         val name: String,
@@ -91,11 +86,12 @@ class WorkflowMcpService {
 
         val appEngine = try {
             embeddedServer(CIO, host = "0.0.0.0", port = port) {
-                install(SSE)
-                routing {
-                    mcp("/mcp") {
-                        mcpServer
-                    }
+                // Application.mcp { } installs SSE and registers GET+POST at root (/).
+                // Do NOT use mcp("/mcp") { } — the SDK's path overload has a routing bug
+                // where sse() and post() are registered on the outer Routing (root) instead
+                // of the intended sub-route, causing 404 on every client request.
+                mcp {
+                    createMcpServer()
                 }
             }
         } catch (t: Throwable) {
