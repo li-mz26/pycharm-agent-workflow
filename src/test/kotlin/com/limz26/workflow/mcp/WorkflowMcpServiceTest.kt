@@ -57,6 +57,44 @@ class WorkflowMcpServiceTest {
         assertEquals(600, positions.getValue("n3").x)
     }
 
+    @Test
+    fun `run workflow executes python code node`() {
+        val service = WorkflowMcpService()
+        val workflowDir = Files.createTempDirectory("workflow-run-test").toFile()
+        val nodesDir = File(workflowDir, "nodes").apply { mkdirs() }
+
+        val workflow = WorkflowDefinition(
+            id = "wf-run",
+            name = "run",
+            description = "",
+            nodes = listOf(
+                NodeDefinition("n1", "start", "start", PositionDefinition(0, 0), NodeConfigDefinition()),
+                NodeDefinition("n2", "code", "code", PositionDefinition(0, 0), NodeConfigDefinition(codeFile = "nodes/n2.py")),
+                NodeDefinition("n3", "end", "end", PositionDefinition(0, 0), NodeConfigDefinition())
+            ),
+            edges = listOf(
+                EdgeDefinition("e1", "n1", "n2"),
+                EdgeDefinition("e2", "n2", "n3")
+            ),
+            variables = emptyMap()
+        )
+
+        File(workflowDir, "workflow.json").writeText(gson.toJson(workflow))
+        File(nodesDir, "n2.py").writeText(
+            """
+def main(inputs):
+    return {"value": 42}
+            """.trimIndent()
+        )
+
+        val result = service.runWorkflow(workflowDir.absolutePath)
+
+        assertTrue(result.success)
+        assertTrue(result.logs.any { it.contains("工作流运行完成（实际执行）") })
+        assertTrue(result.logs.any { it.contains("\"value\": 42") || it.contains("\"value\":42") })
+    }
+
+
     private fun writeWorkflow(workflowDir: File) {
         val workflow = WorkflowDefinition(
             id = "wf-layout",
