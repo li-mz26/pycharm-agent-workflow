@@ -1,6 +1,7 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import org.jetbrains.intellij.tasks.PrepareSandboxTask
+import org.gradle.jvm.tasks.Jar
 
 plugins {
     id("java")
@@ -57,6 +58,17 @@ tasks {
         enabled = false
     }
 
+
+
+    // IMPORTANT: users may install a single plugin .jar directly (without lib/ directory).
+    // Embed runtime dependencies into the plugin jar so PluginClassLoader can resolve MCP/Ktor classes.
+    withType<Jar> {
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+        from({
+            configurations.runtimeClasspath.get().map { zipTree(it) }
+        })
+        exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
+    }
 
     // Ensure external runtime dependencies are copied into plugin sandbox/lib to avoid PluginClassLoader CNFEs.
     withType<PrepareSandboxTask> {
