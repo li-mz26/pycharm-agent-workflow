@@ -416,7 +416,7 @@ class WorkflowMcpService {
         val basePath = resolveProjectBasePath(projectBasePath)
         val workflowsDir = File(basePath, "workflows").apply { mkdirs() }
         val folderName = name.lowercase()
-            .replace(Regex("[^a-z0-9\-_]+"), "-")
+            .replace(Regex("[^a-z0-9_-]+"), "-")
             .trim('-')
             .ifEmpty { "workflow-${UUID.randomUUID().toString().take(8)}" }
         val workflowDir = File(workflowsDir, folderName)
