@@ -69,6 +69,10 @@ enum class NodeType(val value: String) {
 data class NodeConfig(
     val code: String? = null,                    // code 节点
     val prompt: String? = null,                  // agent 节点
+    val promptTemplate: String? = null,          // agent 节点模板
+    val systemPrompt: String? = null,            // agent 节点 system prompt
+    val apiEndpoint: String? = null,             // agent 节点 endpoint
+    val apiKey: String? = null,                  // agent 节点 key
     val model: String? = null,                   // agent 节点
     val condition: String? = null,               // condition 节点
     val method: String? = null,                  // http 节点
@@ -82,6 +86,10 @@ data class NodeConfig(
         val fields = mutableListOf<String>()
         code?.let { fields.add("\"code\": \"${escapeJson(it)}\"") }
         prompt?.let { fields.add("\"prompt\": \"${escapeJson(it)}\"") }
+        promptTemplate?.let { fields.add("\"promptTemplate\": \"${escapeJson(it)}\"") }
+        systemPrompt?.let { fields.add("\"systemPrompt\": \"${escapeJson(it)}\"") }
+        apiEndpoint?.let { fields.add("\"apiEndpoint\": \"${escapeJson(it)}\"") }
+        apiKey?.let { fields.add("\"apiKey\": \"${escapeJson(it)}\"") }
         model?.let { fields.add("\"model\": \"$it\"") }
         condition?.let { fields.add("\"condition\": \"${escapeJson(it)}\"") }
         method?.let { fields.add("\"method\": \"$it\"") }

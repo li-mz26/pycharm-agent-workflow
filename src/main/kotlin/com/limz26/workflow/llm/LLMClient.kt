@@ -22,15 +22,26 @@ class LLMClient {
         val content: String
     )
 
+    data class ChatConfig(
+        val apiEndpoint: String,
+        val apiKey: String,
+        val model: String,
+        val temperature: Double
+    )
+
     /**
      * 发送对话请求
      */
     fun chat(messages: List<Message>): String {
+        return chat(messages, ChatConfig(settings.apiEndpoint, settings.apiKey, settings.model, settings.temperature))
+    }
+
+    fun chat(messages: List<Message>, config: ChatConfig): String {
         return when {
-            settings.apiEndpoint.contains("openai") -> callOpenAI(messages)
-            settings.apiEndpoint.contains("anthropic") -> callClaude(messages)
-            settings.apiEndpoint.contains("moonshot") -> callKimi(messages)
-            else -> callGeneric(messages)
+            config.apiEndpoint.contains("openai") -> callOpenAI(messages, config)
+            config.apiEndpoint.contains("anthropic") -> callClaude(messages, config)
+            config.apiEndpoint.contains("moonshot") -> callKimi(messages, config)
+            else -> callGeneric(messages, config)
         }
     }
 
@@ -72,20 +83,20 @@ class LLMClient {
         return extractJson(response)
     }
 
-    private fun callOpenAI(messages: List<Message>): String {
-        val endpoint = buildChatCompletionsEndpoint(settings.apiEndpoint)
+    private fun callOpenAI(messages: List<Message>, config: ChatConfig): String {
+        val endpoint = buildChatCompletionsEndpoint(config.apiEndpoint)
         val conn = (URL(endpoint).openConnection() as HttpURLConnection)
 
         return try {
             conn.connectTimeout = 10_000
             conn.readTimeout = 60_000
             conn.requestMethod = "POST"
-            conn.setRequestProperty("Authorization", "Bearer ${settings.apiKey}")
+            conn.setRequestProperty("Authorization", "Bearer ${config.apiKey}")
             conn.setRequestProperty("Content-Type", "application/json")
             conn.doOutput = true
 
             val body = buildJsonObject {
-                put("model", settings.model)
+                put("model", config.model)
                 put(
                     "messages",
                     JsonArray(messages.map {
@@ -95,7 +106,7 @@ class LLMClient {
                         }
                     })
                 )
-                put("temperature", settings.temperature)
+                put("temperature", config.temperature)
             }.toString()
 
             conn.outputStream.use { it.write(body.toByteArray()) }
@@ -134,19 +145,16 @@ class LLMClient {
         }
     }
 
-    private fun callClaude(_messages: List<Message>): String {
-        // TODO: 实现 Claude API 调用
+    private fun callClaude(_messages: List<Message>, _config: ChatConfig): String {
         return "Claude API not implemented yet"
     }
 
-    private fun callKimi(_messages: List<Message>): String {
-        // TODO: 实现 Kimi API 调用
+    private fun callKimi(_messages: List<Message>, _config: ChatConfig): String {
         return "Kimi API not implemented yet"
     }
 
-    private fun callGeneric(messages: List<Message>): String {
-        // 通用 OpenAI 兼容格式
-        return callOpenAI(messages)
+    private fun callGeneric(messages: List<Message>, config: ChatConfig): String {
+        return callOpenAI(messages, config)
     }
 
 

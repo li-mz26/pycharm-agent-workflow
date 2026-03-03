@@ -166,6 +166,10 @@ data class NodeConfigDefinition(
     val codeFile: String? = null,                // 外部代码文件路径，如 "nodes/process_data.py"
     val prompt: String? = null,
     val promptFile: String? = null,              // 外部提示词文件路径
+    val promptTemplate: String? = null,
+    val systemPrompt: String? = null,
+    val apiEndpoint: String? = null,
+    val apiKey: String? = null,
     val model: String? = null,
     val condition: String? = null,
     val method: String? = null,
