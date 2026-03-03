@@ -24,7 +24,7 @@ repositories {
 dependencies {
     implementation("com.google.code.gson:gson:2.10.1")
     // MCP server with Ktor (follow kotlin-sdk docs)
-    implementation("io.ktor:ktor-server-netty:3.2.3")
+    implementation("io.ktor:ktor-server-cio:3.2.3")
     implementation("io.modelcontextprotocol:kotlin-sdk-server:0.8.3")
 
     // Test dependencies
