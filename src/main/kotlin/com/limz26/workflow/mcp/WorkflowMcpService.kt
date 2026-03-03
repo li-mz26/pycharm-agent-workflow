@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.ProjectManager
+import com.limz26.workflow.agent.WorkflowAgent
 import com.limz26.workflow.model.*
 import com.limz26.workflow.settings.AppSettings
 import com.limz26.workflow.service.WorkflowService
@@ -25,6 +26,7 @@ import kotlinx.serialization.json.put
 import java.io.File
 import java.util.ArrayDeque
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 /**
  * 内置 MCP 服务（官方 kotlin-sdk streamable HTTP）
@@ -704,3 +706,49 @@ class WorkflowMcpService {
 
 
 }
+        val inputFile = Files.createTempFile("workflow-node-input-${node.id}-", ".json").toFile()
+
+        try {
+            codeFile.writeText(code)
+            inputFile.writeText(inputJson)
+            runnerFile.writeText(
+                """
+input_path = sys.argv[2]
+with open(input_path, "r", encoding="utf-8") as f:
+    inputs = json.load(f)
+
+                """.trimIndent()
+            )
+            val process = ProcessBuilder("python3", runnerFile.absolutePath, codeFile.absolutePath, inputFile.absolutePath)
+                .redirectErrorStream(false)
+                .start()
+            val finished = process.waitFor(60, TimeUnit.SECONDS)
+            if (!finished) {
+                process.destroyForcibly()
+                throw IllegalStateException("python 执行超时(>60s)")
+            }
+            val stdout = process.inputStream.bufferedReader().use { it.readText() }
+            val stderr = process.errorStream.bufferedReader().use { it.readText() }
+            val exitCode = process.exitValue()
+            if (exitCode != 0) {
+                throw IllegalStateException("python 执行失败(exit=$exitCode): ${stderr.ifBlank { stdout }}")
+            }
+            val parsed = parseJsonMapFromOutput(stdout)
+            return parsed.entries.associate { it.key.toString() to it.value }
+        } finally {
+            codeFile.delete()
+            inputFile.delete()
+            runnerFile.delete()
+        }
+        return placeholderRegex.replace(template) { match ->
+            if (key == "input_json") {
+                gson.toJson(mergedInputs)
+            } else {
+                resolvePath(mergedInputs, key)?.toString() ?: ""
+            }
+    private fun parseJsonMapFromOutput(stdout: String): Map<*, *> {
+        val jsonLine = stdout.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.lastOrNull() ?: "{}"
+        val parsed = gson.fromJson(jsonLine, Map::class.java)
+        return parsed as? Map<*, *> ?: emptyMap<String, Any?>()
+    }
+
