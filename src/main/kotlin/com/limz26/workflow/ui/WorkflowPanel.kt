@@ -22,8 +22,6 @@ import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.Font
 import java.time.LocalTime
-import java.awt.event.KeyAdapter
-import java.awt.event.KeyEvent
 import javax.swing.*
 import javax.swing.border.MatteBorder
 
@@ -67,7 +65,8 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     private val workflowComboModel = DefaultComboBoxModel<String>()
     private val workflowCombo = JComboBox(workflowComboModel)
     private val consoleWorkflowLabel = JLabel("workflow")
-    private var selectedNodeIdForEditor: String? = null
+    private var nodeConfigSplitter: JBSplitter? = null
+    private var nodeConfigHidden = false
 
     // 可视化底部 console 面板
     private val testInputArea = JBTextArea().apply {
@@ -294,11 +293,11 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
 
         val rightEditor = createNodeConfigPanel()
         canvas.setOnNodeSelected { node ->
-            selectedNodeIdForEditor = node?.id
             updateNodeConfigPanel(rightEditor, node)
         }
 
         val canvasWithEditor = JBSplitter(false, 0.72f)
+        nodeConfigSplitter = canvasWithEditor
         canvasWithEditor.firstComponent = canvas
         canvasWithEditor.secondComponent = rightEditor
 
@@ -314,99 +313,178 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     private fun createNodeConfigPanel(): JPanel {
         val panel = JPanel(BorderLayout())
         panel.border = BorderFactory.createTitledBorder("节点配置")
-        val area = JTextArea("请选择一个节点进行配置").apply {
-            lineWrap = true
-            wrapStyleWord = true
-            isEditable = false
+
+        val header = JPanel(BorderLayout())
+        val titleLabel = JLabel("未选择节点")
+        header.add(titleLabel, BorderLayout.WEST)
+        val toggleBtn = JButton("隐藏").apply {
+            addActionListener { toggleNodeConfigPanel() }
         }
-        panel.putClientProperty("configArea", area)
-        panel.add(JBScrollPane(area), BorderLayout.CENTER)
+        header.add(toggleBtn, BorderLayout.EAST)
+        panel.add(header, BorderLayout.NORTH)
+
+        val cardLayout = CardLayout()
+        val cardPanel = JPanel(cardLayout)
+        panel.putClientProperty("titleLabel", titleLabel)
+        panel.putClientProperty("toggleBtn", toggleBtn)
+        panel.putClientProperty("cardLayout", cardLayout)
+        panel.putClientProperty("cardPanel", cardPanel)
+
+        val emptyPanel = JPanel(BorderLayout()).apply {
+            add(JLabel("请选择一个节点进行配置", SwingConstants.CENTER), BorderLayout.CENTER)
+        }
+        cardPanel.add(emptyPanel, "empty")
+
+        val codeForm = JPanel(BorderLayout())
+        val codePathField = JTextField()
+        val codeSaveBtn = JButton("保存脚本路径")
+        val codeInner = JPanel(BorderLayout(0, 6))
+        codeInner.border = JBUI.Borders.empty(8)
+        codeInner.add(JLabel("Python脚本路径"), BorderLayout.NORTH)
+        codeInner.add(codePathField, BorderLayout.CENTER)
+        codeInner.add(codeSaveBtn, BorderLayout.SOUTH)
+        codeForm.add(codeInner, BorderLayout.NORTH)
+        panel.putClientProperty("codePathField", codePathField)
+        panel.putClientProperty("codeSaveBtn", codeSaveBtn)
+        cardPanel.add(codeForm, "code")
+
+        val agentForm = JPanel()
+        agentForm.layout = BoxLayout(agentForm, BoxLayout.Y_AXIS)
+        agentForm.border = JBUI.Borders.empty(8)
+        fun addField(label: String, field: JComponent) {
+            agentForm.add(JLabel(label)); agentForm.add(field); agentForm.add(Box.createVerticalStrut(6))
+        }
+        val apiField = JTextField()
+        val keyField = JTextField()
+        val modelField = JTextField()
+        val systemArea = JTextArea(3, 20).apply { lineWrap = true; wrapStyleWord = true }
+        val templateArea = JTextArea(4, 20).apply { lineWrap = true; wrapStyleWord = true }
+        addField("API Endpoint", apiField)
+        addField("API Key", keyField)
+        addField("Model", modelField)
+        addField("系统提示词", JBScrollPane(systemArea))
+        addField("提示词模板", JBScrollPane(templateArea))
+        val agentSaveBtn = JButton("保存Agent配置")
+        agentForm.add(agentSaveBtn)
+        panel.putClientProperty("agentApiField", apiField)
+        panel.putClientProperty("agentKeyField", keyField)
+        panel.putClientProperty("agentModelField", modelField)
+        panel.putClientProperty("agentSystemArea", systemArea)
+        panel.putClientProperty("agentTemplateArea", templateArea)
+        panel.putClientProperty("agentSaveBtn", agentSaveBtn)
+        cardPanel.add(JBScrollPane(agentForm), "agent")
+
+        val condForm = JPanel(BorderLayout(0, 8))
+        condForm.border = JBUI.Borders.empty(8)
+        val condTableArea = JTextArea(8, 20).apply { lineWrap = true; wrapStyleWord = true }
+        val condSaveBtn = JButton("保存条件流向")
+        condForm.add(JLabel("每行格式: condition:targetNodeId"), BorderLayout.NORTH)
+        condForm.add(JBScrollPane(condTableArea), BorderLayout.CENTER)
+        condForm.add(condSaveBtn, BorderLayout.SOUTH)
+        panel.putClientProperty("condArea", condTableArea)
+        panel.putClientProperty("condSaveBtn", condSaveBtn)
+        cardPanel.add(condForm, "condition")
+
+        panel.add(cardPanel, BorderLayout.CENTER)
+        cardLayout.show(cardPanel, "empty")
         return panel
     }
 
+    private fun toggleNodeConfigPanel() {
+        val splitter = nodeConfigSplitter ?: return
+        nodeConfigHidden = !nodeConfigHidden
+        if (nodeConfigHidden) {
+            splitter.proportion = 1.0f
+        } else {
+            splitter.proportion = 0.72f
+        }
+        val right = splitter.secondComponent as? JPanel
+        val btn = right?.getClientProperty("toggleBtn") as? JButton
+        btn?.text = if (nodeConfigHidden) "展开" else "隐藏"
+    }
+
     private fun updateNodeConfigPanel(panel: JPanel, node: NodeDefinition?) {
-        val area = panel.getClientProperty("configArea") as? JTextArea ?: return
+        val cardLayout = panel.getClientProperty("cardLayout") as? CardLayout ?: return
+        val cardPanel = panel.getClientProperty("cardPanel") as? JPanel ?: return
+        val titleLabel = panel.getClientProperty("titleLabel") as? JLabel
+
         if (node == null) {
-            area.text = "请选择一个节点进行配置"
+            titleLabel?.text = "未选择节点"
+            cardLayout.show(cardPanel, "empty")
             return
         }
+
+        titleLabel?.text = "${node.name} (${node.type})"
         when (node.type) {
-            "code" -> showCodeNodeEditor(area, node)
-            "agent" -> showAgentNodeEditor(area, node)
-            "condition" -> showConditionNodeEditor(area, node)
-            else -> area.text = "节点 ${node.name} (${node.type}) 暂无可编辑高级配置"
+            "code" -> bindCodeForm(panel, node, cardLayout, cardPanel)
+            "agent" -> bindAgentForm(panel, node, cardLayout, cardPanel)
+            "condition" -> bindConditionForm(panel, node, cardLayout, cardPanel)
+            else -> cardLayout.show(cardPanel, "empty")
         }
     }
 
-    private fun showCodeNodeEditor(area: JTextArea, node: NodeDefinition) {
-        area.isEditable = true
-        area.text = node.config.codeFile ?: "nodes/${node.id}.py"
-        area.toolTipText = "编辑 code 节点挂载脚本路径，回车后生效"
-        area.addKeyListener(object : KeyAdapter() {
-            override fun keyReleased(e: KeyEvent) {
-                if (e.keyCode == KeyEvent.VK_ENTER) {
-                    val path = area.text.trim()
-                    updateNodeConfig(node.id) { cfg -> cfg.copy(codeFile = path) }
-                }
-            }
-        })
+    private fun bindCodeForm(panel: JPanel, node: NodeDefinition, cardLayout: CardLayout, cardPanel: JPanel) {
+        val pathField = panel.getClientProperty("codePathField") as? JTextField ?: return
+        val saveBtn = panel.getClientProperty("codeSaveBtn") as? JButton ?: return
+        pathField.text = node.config.codeFile ?: "nodes/${node.id}.py"
+        saveBtn.actionListeners.forEach { saveBtn.removeActionListener(it) }
+        saveBtn.addActionListener {
+            updateNodeConfig(node.id) { cfg -> cfg.copy(codeFile = pathField.text.trim()) }
+        }
+        cardLayout.show(cardPanel, "code")
     }
 
-    private fun showAgentNodeEditor(area: JTextArea, node: NodeDefinition) {
-        area.isEditable = true
-        area.text = listOf(
-            "apiEndpoint=${node.config.apiEndpoint.orEmpty()}",
-            "apiKey=${node.config.apiKey.orEmpty()}",
-            "model=${node.config.model.orEmpty()}",
-            "systemPrompt=${node.config.systemPrompt.orEmpty()}",
-            "promptTemplate=${node.config.promptTemplate.orEmpty()}"
-        ).joinToString("\n")
-        area.toolTipText = "按 key=value 编辑（每行一个），回车后生效"
-        area.addKeyListener(object : KeyAdapter() {
-            override fun keyReleased(e: KeyEvent) {
-                if (e.keyCode == KeyEvent.VK_ENTER) {
-                    val map = area.text.lines().mapNotNull {
-                        val idx = it.indexOf('=')
-                        if (idx <= 0) null else it.substring(0, idx).trim() to it.substring(idx + 1)
-                    }.toMap()
-                    updateNodeConfig(node.id) { cfg ->
-                        cfg.copy(
-                            apiEndpoint = map["apiEndpoint"] ?: cfg.apiEndpoint,
-                            apiKey = map["apiKey"] ?: cfg.apiKey,
-                            model = map["model"] ?: cfg.model,
-                            systemPrompt = map["systemPrompt"] ?: cfg.systemPrompt,
-                            promptTemplate = map["promptTemplate"] ?: cfg.promptTemplate
-                        )
-                    }
-                }
+    private fun bindAgentForm(panel: JPanel, node: NodeDefinition, cardLayout: CardLayout, cardPanel: JPanel) {
+        val apiField = panel.getClientProperty("agentApiField") as? JTextField ?: return
+        val keyField = panel.getClientProperty("agentKeyField") as? JTextField ?: return
+        val modelField = panel.getClientProperty("agentModelField") as? JTextField ?: return
+        val systemArea = panel.getClientProperty("agentSystemArea") as? JTextArea ?: return
+        val templateArea = panel.getClientProperty("agentTemplateArea") as? JTextArea ?: return
+        val saveBtn = panel.getClientProperty("agentSaveBtn") as? JButton ?: return
+
+        apiField.text = node.config.apiEndpoint.orEmpty()
+        keyField.text = node.config.apiKey.orEmpty()
+        modelField.text = node.config.model.orEmpty()
+        systemArea.text = node.config.systemPrompt.orEmpty()
+        templateArea.text = node.config.promptTemplate.orEmpty()
+
+        saveBtn.actionListeners.forEach { saveBtn.removeActionListener(it) }
+        saveBtn.addActionListener {
+            updateNodeConfig(node.id) { cfg ->
+                cfg.copy(
+                    apiEndpoint = apiField.text.trim(),
+                    apiKey = keyField.text.trim(),
+                    model = modelField.text.trim(),
+                    systemPrompt = systemArea.text,
+                    promptTemplate = templateArea.text
+                )
             }
-        })
+        }
+        cardLayout.show(cardPanel, "agent")
     }
 
-    private fun showConditionNodeEditor(area: JTextArea, node: NodeDefinition) {
-        area.isEditable = true
-        val lines = currentWorkflow?.edges?.filter { it.source == node.id }?.joinToString("\n") {
+    private fun bindConditionForm(panel: JPanel, node: NodeDefinition, cardLayout: CardLayout, cardPanel: JPanel) {
+        val condArea = panel.getClientProperty("condArea") as? JTextArea ?: return
+        val saveBtn = panel.getClientProperty("condSaveBtn") as? JButton ?: return
+        condArea.text = currentWorkflow?.edges?.filter { it.source == node.id }?.joinToString("\n") {
             "${it.condition.orEmpty()}:${it.target}"
         }.orEmpty()
-        area.text = lines
-        area.toolTipText = "每行 condition:targetNodeId，回车后生效"
-        area.addKeyListener(object : KeyAdapter() {
-            override fun keyReleased(e: KeyEvent) {
-                if (e.keyCode == KeyEvent.VK_ENTER) {
-                    val parsed = area.text.lines().mapNotNull { line ->
-                        val idx = line.indexOf(':')
-                        if (idx < 0) null else line.substring(0, idx).trim() to line.substring(idx + 1).trim()
-                    }
-                    val wf = currentWorkflow ?: return
-                    val keep = wf.edges.filterNot { it.source == node.id }
-                    val newEdges = parsed.map { (cond, target) ->
-                        WorkflowEdge(source = node.id, target = target, condition = cond.ifBlank { null })
-                    }
-                    currentWorkflow = wf.copy(edges = keep + newEdges)
-                    canvas.setWorkflow(currentWorkflow!!)
-                }
+
+        saveBtn.actionListeners.forEach { saveBtn.removeActionListener(it) }
+        saveBtn.addActionListener {
+            val parsed = condArea.text.lines().mapNotNull { line ->
+                val idx = line.indexOf(':')
+                if (idx < 0) null else line.substring(0, idx).trim() to line.substring(idx + 1).trim()
             }
-        })
+            val wf = currentWorkflow ?: return@addActionListener
+            val keep = wf.edges.filterNot { it.source == node.id }
+            val newEdges = parsed.map { (cond, target) ->
+                WorkflowEdge(source = node.id, target = target, condition = cond.ifBlank { null })
+            }
+            currentWorkflow = wf.copy(edges = keep + newEdges)
+            canvas.setWorkflow(currentWorkflow!!)
+        }
+        cardLayout.show(cardPanel, "condition")
     }
 
     private fun updateNodeConfig(nodeId: String, updater: (NodeConfig) -> NodeConfig) {
