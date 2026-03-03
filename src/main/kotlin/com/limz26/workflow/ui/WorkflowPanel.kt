@@ -19,6 +19,7 @@ import com.limz26.workflow.util.WorkflowDetector
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import java.awt.BorderLayout
+import java.awt.CardLayout
 import java.awt.Dimension
 import java.awt.Font
 import java.time.LocalTime
