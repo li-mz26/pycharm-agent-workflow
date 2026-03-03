@@ -28,6 +28,7 @@ dependencies {
     implementation("io.ktor:ktor-server-cio:3.2.3")
     implementation("io.ktor:ktor-server-sse:3.2.3")
     implementation("io.ktor:ktor-server-content-negotiation:3.2.3")
+    implementation("io.ktor:ktor-server-cors:3.2.3")
     implementation("io.ktor:ktor-serialization-kotlinx-json:3.2.3")
     implementation("io.modelcontextprotocol:kotlin-sdk-server:0.8.4")
 
