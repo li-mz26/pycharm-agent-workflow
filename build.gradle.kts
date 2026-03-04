@@ -13,12 +13,7 @@ group = "com.limz26"
 version = "0.1.0"
 
 repositories {
-    // 国内镜像（优先）
-    maven("https://maven.aliyun.com/repository/public")
-    maven("https://maven.aliyun.com/repository/central")
-    maven("https://maven.aliyun.com/repository/google")
-
-    // 官方源（兜底）
+    // 官方源
     mavenCentral()
 }
 
