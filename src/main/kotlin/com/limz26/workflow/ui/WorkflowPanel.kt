@@ -42,9 +42,9 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     private var loadedWorkflows: List<LoadedWorkflow> = emptyList()
     private var selectedWorkflow: LoadedWorkflow? = null
     private val mainSplitter = JBSplitter(false, 0.35f)
-    private var isChatCollapsed = false
+    private var isChatCollapsed = true
     private val mcpToggleButton = JButton("启用MCP")
-    private val chatToggleButton = JButton("隐藏对话")
+    private val chatToggleButton = JButton("展开对话")
 
     private val chatArea = JTextArea().apply {
         isEditable = false
@@ -104,8 +104,12 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         val leftPanel = createLeftPanel()
         val canvasPanel = createCanvasPanel()
 
-        mainSplitter.firstComponent = leftPanel
+        mainSplitter.firstComponent = if (isChatCollapsed) JPanel() else leftPanel
         mainSplitter.secondComponent = canvasPanel
+        if (isChatCollapsed) {
+            mainSplitter.proportion = 0.0f
+            mainSplitter.dividerWidth = 1
+        }
 
         setContent(mainSplitter)
         showWelcomeMessage()
@@ -264,7 +268,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         selectorPanel.add(JLabel("工作流"), BorderLayout.WEST)
 
         val selectWorkflowRootBtn = JButton("选择工作流目录")
-        selectWorkflowRootBtn.toolTipText = "选择工作流文件夹所在路径（将覆盖插件配置中的工作流路径）"
+        selectWorkflowRootBtn.toolTipText = "选择工作流文件夹所在路径"
         selectWorkflowRootBtn.addActionListener { onSelectWorkflowRootPath() }
 
         val comboPanel = JPanel(BorderLayout(6, 0))
