@@ -60,13 +60,6 @@ tasks {
     }
 
 
-    // Workaround: avoid flaky online self-version check in restricted networks
-    withType<org.jetbrains.intellij.tasks.InitializeIntelliJPluginTask> {
-        enabled = false
-    }
-
-
-
     // IMPORTANT: users may install a single plugin .jar directly (without lib/ directory).
     // Embed runtime dependencies into the plugin jar so PluginClassLoader can resolve MCP/Ktor classes.
     withType<Jar> {
@@ -85,11 +78,6 @@ tasks {
         }
     }
 
-
-    // Workaround: avoid flaky online self-version check in restricted networks
-    withType<org.jetbrains.intellij.tasks.InitializeIntelliJPluginTask> {
-        enabled = false
-    }
 
     patchPluginXml {
         sinceBuild.set("241")
