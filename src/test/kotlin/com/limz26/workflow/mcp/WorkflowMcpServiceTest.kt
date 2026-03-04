@@ -155,7 +155,7 @@ def main(inputs):
             "def main(inputs):\n    return {\"ok\": True}\n"
         )
 
-        assertEquals("nodes/code_001.py", result["scriptPath"])
+        assertEquals("nodes/code_001.py", normalizePath(result["scriptPath"]))
         val scriptFile = File(workflowDir, "nodes/code_001.py")
         assertTrue(scriptFile.exists())
         assertTrue(scriptFile.readText().contains("def main"))
@@ -188,14 +188,14 @@ def main(inputs):
             "{\"model\":\"gpt-4o-mini\",\"apiEndpoint\":\"https://api.example.com\",\"apiKey\":\"secret\",\"temperature\":0.2}"
         )
 
-        assertEquals("nodes/agent_001_config.json", result["configPath"])
+        assertEquals("nodes/agent_001_config.json", normalizePath(result["configPath"]))
         val configFile = File(workflowDir, "nodes/agent_001_config.json")
         assertTrue(configFile.exists())
         assertTrue(configFile.readText().contains("gpt-4o-mini"))
 
         val updatedWorkflow = gson.fromJson(File(workflowDir, "workflow.json").readText(), WorkflowDefinition::class.java)
         val agentNode = updatedWorkflow.nodes.first { it.id == "agent_001" }
-        assertEquals("nodes/agent_001_config.json", agentNode.config.agentConfigFile)
+        assertEquals("nodes/agent_001_config.json", normalizePath(agentNode.config.agentConfigFile))
         assertEquals(null, agentNode.config.model)
         assertEquals(null, agentNode.config.apiEndpoint)
         assertEquals(null, agentNode.config.apiKey)
@@ -252,5 +252,9 @@ def main(inputs):
         )
 
         File(workflowDir, "workflow.json").writeText(gson.toJson(workflow))
+    }
+
+    private fun normalizePath(value: Any?): String? {
+        return value?.toString()?.replace('\\', '/')
     }
 }
