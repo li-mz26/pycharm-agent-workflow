@@ -216,6 +216,9 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
                         apiEndpoint = nodeDef.config.apiEndpoint,
                         apiKey = nodeDef.config.apiKey,
                         model = nodeDef.config.model,
+                        branchField = nodeDef.config.branchField,
+                        branchCases = nodeDef.config.branchCases,
+                        defaultTarget = nodeDef.config.defaultTarget,
                         inputs = nodeDef.config.inputs,
                         outputs = nodeDef.config.outputs
                     )
@@ -403,13 +406,19 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         val condForm = JPanel(BorderLayout(0, 8))
         condForm.border = JBUI.Borders.empty(8)
         val rowsPanel = JPanel().apply { layout = BoxLayout(this, BoxLayout.Y_AXIS) }
-        val addRowBtn = JButton("添加条件")
-        val condSaveBtn = JButton("保存条件流向")
+        val addRowBtn = JButton("添加分支case")
+        val condSaveBtn = JButton("保存分支流向")
         val btnPanel = JPanel(GridLayout(1, 2, 6, 0)).apply {
             add(addRowBtn)
             add(condSaveBtn)
         }
-        condForm.add(JLabel("条件分支配置"), BorderLayout.NORTH)
+        val branchHeader = JPanel(BorderLayout(0, 6))
+        branchHeader.add(JLabel("分支配置（switch）"), BorderLayout.NORTH)
+        val switchField = JTextField()
+        switchField.toolTipText = "从上游输出 JSON 读取字段路径，如 data.status"
+        branchHeader.add(switchField, BorderLayout.SOUTH)
+        panel.putClientProperty("branchFieldInput", switchField)
+        condForm.add(branchHeader, BorderLayout.NORTH)
         condForm.add(JBScrollPane(rowsPanel), BorderLayout.CENTER)
         condForm.add(btnPanel, BorderLayout.SOUTH)
         panel.putClientProperty("condRowsPanel", rowsPanel)
@@ -445,7 +454,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         when (node.type) {
             "code" -> bindCodeForm(panel, node, cardLayout, cardPanel)
             "agent" -> bindAgentForm(panel, node, cardLayout, cardPanel)
-            "condition" -> bindConditionForm(panel, node, cardLayout, cardPanel)
+            "condition", "branch" -> bindConditionForm(panel, node, cardLayout, cardPanel)
             else -> cardLayout.show(cardPanel, "empty")
         }
     }
@@ -528,16 +537,24 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
 
     private fun bindConditionForm(panel: JPanel, node: NodeDefinition, cardLayout: CardLayout, cardPanel: JPanel) {
         val rowsPanel = panel.getClientProperty("condRowsPanel") as? JPanel ?: return
+        val branchFieldInput = panel.getClientProperty("branchFieldInput") as? JTextField ?: return
         val addBtn = panel.getClientProperty("condAddBtn") as? JButton ?: return
         val saveBtn = panel.getClientProperty("condSaveBtn") as? JButton ?: return
 
+        branchFieldInput.text = node.config.branchField.orEmpty()
         rowsPanel.removeAll()
-        val edges = currentWorkflow?.edges?.filter { it.source == node.id }.orEmpty()
-        if (edges.isEmpty()) {
-            addConditionRow(rowsPanel, "", "")
+        if (node.config.branchCases.isNotEmpty()) {
+            node.config.branchCases.forEach { (caseValue, target) ->
+                addConditionRow(rowsPanel, caseValue, target)
+            }
         } else {
-            edges.forEach { edge ->
-                addConditionRow(rowsPanel, edge.condition.orEmpty(), edge.target)
+            val edges = currentWorkflow?.edges?.filter { it.source == node.id }.orEmpty()
+            if (edges.isEmpty()) {
+                addConditionRow(rowsPanel, "", "")
+            } else {
+                edges.forEach { edge ->
+                    addConditionRow(rowsPanel, edge.condition.orEmpty(), edge.target)
+                }
             }
         }
         rowsPanel.revalidate()
@@ -562,10 +579,25 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
             }
             val wf = currentWorkflow ?: return@addActionListener
             val keep = wf.edges.filterNot { it.source == node.id }
+            val branchCases = parsed.associate { (cond, target) -> cond to target }
             val newEdges = parsed.map { (cond, target) ->
                 WorkflowEdge(source = node.id, target = target, condition = cond.ifBlank { null })
             }
-            currentWorkflow = wf.copy(edges = keep + newEdges)
+            currentWorkflow = wf.copy(
+                edges = keep + newEdges,
+                nodes = wf.nodes.map { n ->
+                    if (n.id == node.id) {
+                        n.copy(
+                            config = n.config.copy(
+                                branchField = branchFieldInput.text.trim(),
+                                branchCases = branchCases,
+                                defaultTarget = null,
+                                condition = null
+                            )
+                        )
+                    } else n
+                }
+            )
             canvas.setWorkflow(currentWorkflow!!, autoLayout = false)
         }
         cardLayout.show(cardPanel, "condition")

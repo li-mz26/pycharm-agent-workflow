@@ -165,6 +165,9 @@ data class NodeConfigDefinition(
     val apiEndpoint: String? = null,
     val apiKey: String? = null,
     val model: String? = null,
+    val branchField: String? = null,             // branch 节点：取上游输出 json 的字段路径（如 "result.status"）
+    val branchCases: Map<String, String> = emptyMap(), // branch 节点：case 值 -> 下一节点 ID
+    val defaultTarget: String? = null,           // branch 节点：默认下一节点 ID
     val condition: String? = null,
     val method: String? = null,
     val url: String? = null,

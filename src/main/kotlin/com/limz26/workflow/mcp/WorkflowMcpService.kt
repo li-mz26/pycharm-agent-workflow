@@ -235,7 +235,7 @@ class WorkflowMcpService {
                 properties = buildJsonObject {
                     put("workflowDirPath", schemaString("工作流目录绝对路径"))
                     put("id", schemaString("节点 ID（为空时服务端自动生成）"))
-                    put("type", schemaString("节点类型：start/end/condition/code/agent/http/variable"))
+                    put("type", schemaString("节点类型：start/end/branch/code/agent/http/variable"))
                     put("name", schemaString("节点显示名称"))
                     put("x", schemaNumber("节点 x 坐标"))
                     put("y", schemaNumber("节点 y 坐标"))

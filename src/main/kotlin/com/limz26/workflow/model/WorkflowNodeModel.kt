@@ -42,6 +42,23 @@ sealed class WorkflowNodeModel(open val definition: NodeDefinition) {
         override fun toDefinition(): NodeDefinition = definition
     }
 
+    class BranchNodeModel(override val definition: NodeDefinition) : WorkflowNodeModel(definition) {
+        init {
+            require(definition.type == "branch") { "BranchNodeModel 仅支持 branch 节点" }
+        }
+
+        fun withSwitchConfig(field: String?, cases: Map<String, String>, defaultTarget: String?): BranchNodeModel {
+            val updated = definition.config.copy(
+                branchField = field,
+                branchCases = cases,
+                defaultTarget = defaultTarget
+            )
+            return BranchNodeModel(definition.copy(config = updated))
+        }
+
+        override fun toDefinition(): NodeDefinition = definition
+    }
+
     class GenericNodeModel(override val definition: NodeDefinition) : WorkflowNodeModel(definition) {
         override fun toDefinition(): NodeDefinition = definition
     }
@@ -51,6 +68,7 @@ sealed class WorkflowNodeModel(open val definition: NodeDefinition) {
             return when (definition.type) {
                 "agent" -> AgentNodeModel(definition)
                 "code" -> CodeNodeModel(definition)
+                "branch" -> BranchNodeModel(definition)
                 else -> GenericNodeModel(definition)
             }
         }

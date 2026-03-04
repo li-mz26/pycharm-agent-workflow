@@ -74,17 +74,17 @@ class WorkflowService {
                     NodeType.END -> mergedInputs
                     NodeType.CODE -> executeCodeNode(loaded, node, mergedInputs)
                     NodeType.AGENT -> executeAgentNode(node, mergedInputs, workflowDirPath)
+                    NodeType.BRANCH -> mergedInputs
                     else -> mergedInputs
                 }
                 outputs[node.id] = result
                 logs += "  - 输出: ${gson.toJson(result).take(300)}"
 
                 val outgoingForNode = outgoingEdges[node.id].orEmpty()
-                if (nodeType == NodeType.CONDITION) {
-                    val conditionResult = evaluateConditionResult(node, mergedInputs, result)
-                    val selected = selectConditionEdges(outgoingForNode, conditionResult)
+                if (nodeType == NodeType.BRANCH || nodeType == NodeType.CONDITION) {
+                    val selected = selectBranchEdges(node, outgoingForNode, mergedInputs, result)
                     activeEdgeIds.addAll(selected.map { it.id })
-                    logs += "  - 条件结果: $conditionResult, 命中分支: ${selected.joinToString { it.target }}"
+                    logs += "  - 分支命中: ${selected.joinToString { it.target }}"
                 } else {
                     activeEdgeIds.addAll(outgoingForNode.map { it.id })
                 }
@@ -268,6 +268,32 @@ print(json.dumps(result, ensure_ascii=False))
         return parsed as? Map<*, *> ?: emptyMap<String, Any?>()
     }
 
+    private fun selectBranchEdges(
+        node: NodeDefinition,
+        outgoing: List<EdgeDefinition>,
+        mergedInputs: Map<String, Any?>,
+        executionResult: Map<String, Any?>
+    ): List<EdgeDefinition> {
+        if (outgoing.isEmpty()) return emptyList()
+
+        // condition 节点向后兼容
+        if (node.type == "condition") {
+            val conditionResult = evaluateConditionResult(node, mergedInputs, executionResult)
+            val matched = outgoing.filter { edgeMatchesConditionResult(it.condition, conditionResult) }
+            if (matched.isNotEmpty()) return matched
+            if (outgoing.size == 1) return outgoing
+            return if (conditionResult) listOf(outgoing.first()) else listOf(outgoing.last())
+        }
+
+        val fieldPath = node.config.branchField?.trim().orEmpty()
+        if (fieldPath.isBlank()) return outgoing.take(1)
+
+        val value = resolvePath(mergedInputs, fieldPath)?.toString() ?: ""
+        val target = node.config.branchCases[value] ?: node.config.defaultTarget
+        if (target.isNullOrBlank()) return emptyList()
+        return outgoing.filter { it.target == target }
+    }
+
     private fun evaluateConditionResult(
         node: NodeDefinition,
         mergedInputs: Map<String, Any?>,
@@ -383,6 +409,9 @@ print(json.dumps(result, ensure_ascii=False))
                         apiEndpoint = it.config.apiEndpoint,
                         apiKey = it.config.apiKey,
                         model = it.config.model,
+                        branchField = it.config.branchField,
+                        branchCases = it.config.branchCases,
+                        defaultTarget = it.config.defaultTarget,
                         condition = it.config.condition,
                         method = it.config.method,
                         url = it.config.url,
