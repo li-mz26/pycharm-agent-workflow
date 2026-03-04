@@ -49,6 +49,11 @@ intellij {
 }
 
 tasks {
+    // Skip: avoid flaky online check
+    withType<org.jetbrains.intellij.tasks.InitializeIntelliJPluginTask> {
+        enabled = false
+    }
+
     withType<JavaCompile> {
         sourceCompatibility = "17"
         targetCompatibility = "17"
