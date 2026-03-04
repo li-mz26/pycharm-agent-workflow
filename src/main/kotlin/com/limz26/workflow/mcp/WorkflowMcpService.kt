@@ -189,6 +189,43 @@ class WorkflowMcpService {
         }
 
         server.addTool(
+            name = "workflow_write_python_script",
+            description = "在工作流目录下写入 Python 脚本文件。支持传入相对 workflow 目录的脚本路径（例如 nodes/code_001.py）。",
+            inputSchema = ToolSchema(
+                properties = buildJsonObject {
+                    put("workflowDirPath", schemaString("工作流目录绝对路径"))
+                    put("scriptPath", schemaString("脚本相对路径（必须以 .py 结尾）"))
+                    put("code", schemaString("Python 脚本内容"))
+                },
+                required = listOf("workflowDirPath", "scriptPath", "code")
+            )
+        ) { request ->
+            val dir = request.requireStringArg("workflowDirPath")
+            val scriptPath = request.requireStringArg("scriptPath")
+            val code = request.requireStringArg("code")
+            asToolResult(writePythonScriptFile(dir, scriptPath, code))
+        }
+
+        server.addTool(
+            name = "workflow_write_agent_node_config",
+            description = "写入 agent 节点配置文件 nodes/{nodeId}_config.json。",
+            inputSchema = ToolSchema(
+                properties = buildJsonObject {
+                    put("workflowDirPath", schemaString("工作流目录绝对路径"))
+                    put("nodeId", schemaString("agent 节点 ID"))
+                    put("config", schemaObject("agent 节点配置 JSON 对象"))
+                },
+                required = listOf("workflowDirPath", "nodeId", "config")
+            )
+        ) { request ->
+            val dir = request.requireStringArg("workflowDirPath")
+            val nodeId = request.requireStringArg("nodeId")
+            val configJson = request.arguments?.get("config")
+                ?: throw IllegalArgumentException("Missing argument: config")
+            asToolResult(writeAgentNodeConfigFile(dir, nodeId, gson.toJson(gson.fromJson(configJson.toString(), Any::class.java))))
+        }
+
+        server.addTool(
             name = "workflow_add_node",
             description = "向工作流新增一个节点。仅传递关键字段，底层 JSON 合并由服务端处理。",
             inputSchema = ToolSchema(
@@ -475,6 +512,36 @@ class WorkflowMcpService {
         val py = File(workflowDirPath, "nodes/$nodeId.py")
         require(py.exists()) { "节点代码文件不存在: ${py.absolutePath}" }
         return py.readText()
+    }
+
+    fun writePythonScriptFile(workflowDirPath: String, scriptPath: String, code: String): Map<String, Any> {
+        require(scriptPath.endsWith(".py")) { "scriptPath 必须以 .py 结尾" }
+        val workflowDir = File(workflowDirPath).canonicalFile
+        require(workflowDir.isDirectory) { "工作流目录不存在: $workflowDirPath" }
+        val target = File(workflowDir, scriptPath).canonicalFile
+        require(target.path.startsWith(workflowDir.path + File.separator)) { "scriptPath 必须位于工作流目录内" }
+        target.parentFile?.mkdirs()
+        target.writeText(code)
+        return mapOf(
+            "scriptPath" to target.relativeTo(workflowDir).path,
+            "absolutePath" to target.absolutePath,
+            "bytes" to target.length()
+        )
+    }
+
+    fun writeAgentNodeConfigFile(workflowDirPath: String, nodeId: String, configJson: String): Map<String, Any> {
+        require(nodeId.isNotBlank()) { "nodeId 不能为空" }
+        val workflowDir = File(workflowDirPath)
+        require(workflowDir.isDirectory) { "工作流目录不存在: $workflowDirPath" }
+        val nodesDir = File(workflowDir, "nodes").apply { mkdirs() }
+        val target = File(nodesDir, "${nodeId}_config.json")
+        val parsed = gson.fromJson(configJson, Any::class.java)
+        target.writeText(gson.toJson(parsed))
+        return mapOf(
+            "configPath" to "nodes/${nodeId}_config.json",
+            "absolutePath" to target.absolutePath,
+            "bytes" to target.length()
+        )
     }
 
     fun addNode(workflowDirPath: String, node: NodeDefinition): String {

@@ -144,6 +144,40 @@ def main(inputs):
         assertTrue(result.logs.any { it.contains("\"value\": 42") || it.contains("\"value\":42") })
     }
 
+    @Test
+    fun `write python script file creates file in workflow dir`() {
+        val service = WorkflowMcpService()
+        val workflowDir = Files.createTempDirectory("workflow-write-script-test").toFile()
+
+        val result = service.writePythonScriptFile(
+            workflowDir.absolutePath,
+            "nodes/code_001.py",
+            "def main(inputs):\n    return {\"ok\": True}\n"
+        )
+
+        assertEquals("nodes/code_001.py", result["scriptPath"])
+        val scriptFile = File(workflowDir, "nodes/code_001.py")
+        assertTrue(scriptFile.exists())
+        assertTrue(scriptFile.readText().contains("def main"))
+    }
+
+    @Test
+    fun `write agent node config file creates config json`() {
+        val service = WorkflowMcpService()
+        val workflowDir = Files.createTempDirectory("workflow-write-agent-config-test").toFile()
+
+        val result = service.writeAgentNodeConfigFile(
+            workflowDir.absolutePath,
+            "agent_001",
+            "{\"model\":\"gpt-4o-mini\",\"temperature\":0.2}"
+        )
+
+        assertEquals("nodes/agent_001_config.json", result["configPath"])
+        val configFile = File(workflowDir, "nodes/agent_001_config.json")
+        assertTrue(configFile.exists())
+        assertTrue(configFile.readText().contains("gpt-4o-mini"))
+    }
+
 
     private fun writeWorkflow(workflowDir: File) {
         val workflow = WorkflowDefinition(
