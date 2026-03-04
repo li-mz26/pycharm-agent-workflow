@@ -36,7 +36,20 @@ class WorkflowMcpService {
 
     private val mcpServer: Server by lazy { createMcpServer() }
     private val runtime: WorkflowMcpRuntime by lazy { WorkflowMcpRuntime { mcpServer } }
-    private val workflowService: WorkflowService by lazy { service<WorkflowService>() }
+    private var _workflowService: WorkflowService? = null
+    private val workflowService: WorkflowService
+        get() = _workflowService ?: run {
+            try {
+                service<WorkflowService>().also { _workflowService = it }
+            } catch (e: Exception) {
+                throw IllegalStateException("WorkflowService not available - run in IDE or set via setWorkflowService()")
+            }
+        }
+    
+    // For testing: allow direct injection
+    fun setWorkflowService(service: WorkflowService) {
+        _workflowService = service
+    }
 
     data class WorkflowSummary(
         val name: String,

@@ -2,6 +2,7 @@ package com.limz26.workflow.mcp
 
 import com.google.gson.GsonBuilder
 import com.limz26.workflow.model.*
+import com.limz26.workflow.service.WorkflowService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -108,6 +109,7 @@ class WorkflowMcpServiceTest {
     @Test
     fun `run workflow executes python code node`() {
         val service = WorkflowMcpService()
+        service.setWorkflowService(WorkflowService())
         val workflowDir = Files.createTempDirectory("workflow-run-test").toFile()
         val nodesDir = File(workflowDir, "nodes").apply { mkdirs() }
 

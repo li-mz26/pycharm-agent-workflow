@@ -49,6 +49,11 @@ intellij {
 }
 
 tasks {
+    // Skip: avoid flaky online check
+    withType<org.jetbrains.intellij.tasks.InitializeIntelliJPluginTask> {
+        enabled = false
+    }
+
     withType<JavaCompile> {
         sourceCompatibility = "17"
         targetCompatibility = "17"
@@ -58,13 +63,6 @@ tasks {
             jvmTarget.set(JvmTarget.JVM_17)
         }
     }
-
-
-    // Workaround: avoid flaky online self-version check in restricted networks
-    withType<org.jetbrains.intellij.tasks.InitializeIntelliJPluginTask> {
-        enabled = false
-    }
-
 
 
     // IMPORTANT: users may install a single plugin .jar directly (without lib/ directory).
@@ -85,11 +83,6 @@ tasks {
         }
     }
 
-
-    // Workaround: avoid flaky online self-version check in restricted networks
-    withType<org.jetbrains.intellij.tasks.InitializeIntelliJPluginTask> {
-        enabled = false
-    }
 
     patchPluginXml {
         sinceBuild.set("241")
