@@ -573,10 +573,15 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
 
     private fun addConditionRow(rowsPanel: JPanel, condition: String, target: String) {
         val row = JPanel(GridLayout(1, 3, 6, 0))
+        val rowHeight = 34
+        row.preferredSize = Dimension(0, rowHeight)
+        row.minimumSize = Dimension(0, rowHeight)
+        row.maximumSize = Dimension(Int.MAX_VALUE, rowHeight)
         row.border = JBUI.Borders.empty(0, 0, 6, 0)
         val conditionField = JTextField(condition)
         val targetField = JTextField(target)
         val removeBtn = JButton("删除")
+        removeBtn.preferredSize = Dimension(72, rowHeight)
         row.putClientProperty("condField", conditionField)
         row.putClientProperty("targetField", targetField)
         removeBtn.addActionListener {
