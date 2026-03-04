@@ -214,6 +214,7 @@ class WorkflowMcpService {
                 properties = buildJsonObject {
                     put("workflowDirPath", schemaString("工作流目录绝对路径"))
                     put("nodeId", schemaString("agent 节点 ID"))
+                    put("configPath", schemaString("agent 配置文件相对路径（可选，默认 nodes/{nodeId}_config.json）"))
                     put("config", schemaObject("agent 节点配置 JSON 对象"))
                 },
                 required = listOf("workflowDirPath", "nodeId", "config")
@@ -221,9 +222,10 @@ class WorkflowMcpService {
         ) { request ->
             val dir = request.requireStringArg("workflowDirPath")
             val nodeId = request.requireStringArg("nodeId")
+            val configPath = request.optionalStringArg("configPath")
             val configJson = request.arguments?.get("config")
                 ?: throw IllegalArgumentException("Missing argument: config")
-            asToolResult(writeAgentNodeConfigFile(dir, nodeId, configJson.toString()))
+            asToolResult(writeAgentNodeConfigFile(dir, nodeId, configJson.toString(), configPath))
         }
 
         server.addTool(
@@ -530,7 +532,7 @@ class WorkflowMcpService {
         )
     }
 
-    fun writeAgentNodeConfigFile(workflowDirPath: String, nodeId: String, configJson: String): Map<String, Any> {
+    fun writeAgentNodeConfigFile(workflowDirPath: String, nodeId: String, configJson: String, configPath: String? = null): Map<String, Any> {
         require(nodeId.isNotBlank()) { "nodeId 不能为空" }
         val workflowDir = File(workflowDirPath)
         require(workflowDir.isDirectory) { "工作流目录不存在: $workflowDirPath" }
@@ -542,11 +544,13 @@ class WorkflowMcpService {
             ?: throw IllegalArgumentException("仅支持 agent 节点配置写入: $nodeId")
 
         val configObj = JsonParser.parseString(configJson).asJsonObject
-        val nodesDir = File(workflowDir, "nodes").apply { mkdirs() }
-        val target = File(nodesDir, "${nodeId}_config.json")
+        val relativePath = configPath?.trim()?.ifEmpty { null } ?: "nodes/${nodeId}_config.json"
+        val target = File(workflowDir, relativePath).canonicalFile
+        require(target.path.startsWith(workflowDir.canonicalPath + File.separator)) { "configPath 必须位于工作流目录内" }
+        target.parentFile?.mkdirs()
         target.writeText(gson.toJson(configObj))
 
-        val updatedAgentNode = agentNode.mergeConfigPatch(configObj)
+        val updatedAgentNode = agentNode.withConfigFile(target.relativeTo(workflowDir.canonicalFile).path)
         val updatedWorkflow = workflowDef.copy(
             nodes = workflowDef.nodes.map { node ->
                 if (node.id == nodeId) updatedAgentNode.toDefinition() else node
@@ -555,7 +559,7 @@ class WorkflowMcpService {
         val workflowJson = saveWorkflowDefinition(workflowDirPath, updatedWorkflow)
 
         return mapOf(
-            "configPath" to "nodes/${nodeId}_config.json",
+            "configPath" to target.relativeTo(workflowDir.canonicalFile).path,
             "absolutePath" to target.absolutePath,
             "bytes" to target.length(),
             "workflowJson" to workflowJson

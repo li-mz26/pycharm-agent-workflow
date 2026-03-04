@@ -195,9 +195,10 @@ def main(inputs):
 
         val updatedWorkflow = gson.fromJson(File(workflowDir, "workflow.json").readText(), WorkflowDefinition::class.java)
         val agentNode = updatedWorkflow.nodes.first { it.id == "agent_001" }
-        assertEquals("gpt-4o-mini", agentNode.config.model)
-        assertEquals("https://api.example.com", agentNode.config.apiEndpoint)
-        assertEquals("secret", agentNode.config.apiKey)
+        assertEquals("nodes/agent_001_config.json", agentNode.config.agentConfigFile)
+        assertEquals(null, agentNode.config.model)
+        assertEquals(null, agentNode.config.apiEndpoint)
+        assertEquals(null, agentNode.config.apiKey)
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.limz26.workflow.ui
 
+import com.google.gson.GsonBuilder
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
@@ -36,6 +37,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     private val settings = service<AppSettings>()
     private val mcpService = service<WorkflowMcpService>()
     private val workflowService = service<WorkflowService>()
+    private val gson = GsonBuilder().setPrettyPrinting().create()
     private var currentWorkflow: Workflow? = null
     private var loadedWorkflows: List<LoadedWorkflow> = emptyList()
     private var selectedWorkflow: LoadedWorkflow? = null
@@ -199,6 +201,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
                         code = nodeDef.config.code,
                         codeFile = nodeDef.config.codeFile,
                         prompt = nodeDef.config.prompt,
+                        agentConfigFile = nodeDef.config.agentConfigFile,
                         promptTemplate = nodeDef.config.promptTemplate,
                         systemPrompt = nodeDef.config.systemPrompt,
                         apiEndpoint = nodeDef.config.apiEndpoint,
@@ -357,11 +360,13 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         fun addField(label: String, field: JComponent) {
             agentForm.add(JLabel(label)); agentForm.add(field); agentForm.add(Box.createVerticalStrut(6))
         }
+        val configPathField = JTextField()
         val apiField = JTextField()
         val keyField = JTextField()
         val modelField = JTextField()
         val systemArea = JTextArea(3, 20).apply { lineWrap = true; wrapStyleWord = true }
         val templateArea = JTextArea(4, 20).apply { lineWrap = true; wrapStyleWord = true }
+        addField("配置文件路径", configPathField)
         addField("API Endpoint", apiField)
         addField("API Key", keyField)
         addField("Model", modelField)
@@ -369,6 +374,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         addField("提示词模板", JBScrollPane(templateArea))
         val agentSaveBtn = JButton("保存Agent配置")
         agentForm.add(agentSaveBtn)
+        panel.putClientProperty("agentConfigPathField", configPathField)
         panel.putClientProperty("agentApiField", apiField)
         panel.putClientProperty("agentKeyField", keyField)
         panel.putClientProperty("agentModelField", modelField)
@@ -439,6 +445,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     }
 
     private fun bindAgentForm(panel: JPanel, node: NodeDefinition, cardLayout: CardLayout, cardPanel: JPanel) {
+        val configPathField = panel.getClientProperty("agentConfigPathField") as? JTextField ?: return
         val apiField = panel.getClientProperty("agentApiField") as? JTextField ?: return
         val keyField = panel.getClientProperty("agentKeyField") as? JTextField ?: return
         val modelField = panel.getClientProperty("agentModelField") as? JTextField ?: return
@@ -446,26 +453,61 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         val templateArea = panel.getClientProperty("agentTemplateArea") as? JTextArea ?: return
         val saveBtn = panel.getClientProperty("agentSaveBtn") as? JButton ?: return
 
-        apiField.text = node.config.apiEndpoint.orEmpty()
-        keyField.text = node.config.apiKey.orEmpty()
-        modelField.text = node.config.model.orEmpty()
-        systemArea.text = node.config.systemPrompt.orEmpty()
-        templateArea.text = node.config.promptTemplate.orEmpty()
+        val configPath = node.config.agentConfigFile ?: "nodes/${node.id}_config.json"
+        configPathField.text = configPath
+
+        val configFromFile = selectedWorkflow?.baseDir?.let { baseDir ->
+            runCatching {
+                val file = java.io.File(baseDir, configPath)
+                if (!file.exists()) null else gson.fromJson(file.readText(), AgentNodeFileConfig::class.java)
+            }.getOrNull()
+        }
+
+        apiField.text = configFromFile?.apiEndpoint.orEmpty()
+        keyField.text = configFromFile?.apiKey.orEmpty()
+        modelField.text = configFromFile?.model.orEmpty()
+        systemArea.text = configFromFile?.systemPrompt.orEmpty()
+        templateArea.text = configFromFile?.promptTemplate.orEmpty()
 
         saveBtn.actionListeners.forEach { saveBtn.removeActionListener(it) }
         saveBtn.addActionListener {
+            val path = configPathField.text.trim().ifEmpty { "nodes/${node.id}_config.json" }
+            val payload = AgentNodeFileConfig(
+                apiEndpoint = apiField.text.trim(),
+                apiKey = keyField.text.trim(),
+                model = modelField.text.trim(),
+                systemPrompt = systemArea.text,
+                promptTemplate = templateArea.text
+            )
+
+            selectedWorkflow?.baseDir?.let { baseDir ->
+                val file = java.io.File(baseDir, path)
+                file.parentFile?.mkdirs()
+                file.writeText(gson.toJson(payload))
+            }
+
             updateNodeConfig(node.id) { cfg ->
                 cfg.copy(
-                    apiEndpoint = apiField.text.trim(),
-                    apiKey = keyField.text.trim(),
-                    model = modelField.text.trim(),
-                    systemPrompt = systemArea.text,
-                    promptTemplate = templateArea.text
+                    agentConfigFile = path,
+                    prompt = null,
+                    promptTemplate = null,
+                    systemPrompt = null,
+                    apiEndpoint = null,
+                    apiKey = null,
+                    model = null
                 )
             }
         }
         cardLayout.show(cardPanel, "agent")
     }
+
+    private data class AgentNodeFileConfig(
+        val apiEndpoint: String? = null,
+        val apiKey: String? = null,
+        val model: String? = null,
+        val systemPrompt: String? = null,
+        val promptTemplate: String? = null
+    )
 
     private fun bindConditionForm(panel: JPanel, node: NodeDefinition, cardLayout: CardLayout, cardPanel: JPanel) {
         val rowsPanel = panel.getClientProperty("condRowsPanel") as? JPanel ?: return

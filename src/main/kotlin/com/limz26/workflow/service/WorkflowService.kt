@@ -73,7 +73,7 @@ class WorkflowService {
                     NodeType.START -> if (initialInput.isEmpty()) mapOf("started" to true) else initialInput
                     NodeType.END -> mergedInputs
                     NodeType.CODE -> executeCodeNode(loaded, node, mergedInputs)
-                    NodeType.AGENT -> executeAgentNode(node, mergedInputs)
+                    NodeType.AGENT -> executeAgentNode(node, mergedInputs, workflowDirPath)
                     else -> mergedInputs
                 }
                 outputs[node.id] = result
@@ -196,13 +196,27 @@ print(json.dumps(result, ensure_ascii=False))
         }
     }
 
-    private fun executeAgentNode(node: NodeDefinition, mergedInputs: Map<String, Any?>): Map<String, Any?> {
-        val config = node.config
-        val endpoint = config.apiEndpoint ?: throw IllegalArgumentException("agent 节点缺少 apiEndpoint")
-        val apiKey = config.apiKey ?: throw IllegalArgumentException("agent 节点缺少 apiKey")
-        val model = config.model ?: "gpt-4o-mini"
-        val systemPrompt = config.systemPrompt ?: "你是一个工作流执行助手。"
-        val template = config.promptTemplate ?: config.prompt ?: "请根据输入给出结果：{{input_json}}"
+    private data class AgentRuntimeConfig(
+        val apiEndpoint: String? = null,
+        val apiKey: String? = null,
+        val model: String? = null,
+        val systemPrompt: String? = null,
+        val promptTemplate: String? = null,
+        val prompt: String? = null
+    )
+
+    private fun executeAgentNode(node: NodeDefinition, mergedInputs: Map<String, Any?>, workflowDirPath: String): Map<String, Any?> {
+        val configPath = node.config.agentConfigFile ?: "nodes/${node.id}_config.json"
+        val configFile = File(workflowDirPath, configPath)
+        require(configFile.exists()) { "agent 节点配置文件不存在: $configPath" }
+
+        val runtimeConfig = gson.fromJson(configFile.readText(), AgentRuntimeConfig::class.java)
+
+        val endpoint = runtimeConfig.apiEndpoint ?: throw IllegalArgumentException("agent 配置缺少 apiEndpoint")
+        val apiKey = runtimeConfig.apiKey ?: throw IllegalArgumentException("agent 配置缺少 apiKey")
+        val model = runtimeConfig.model ?: "gpt-4o-mini"
+        val systemPrompt = runtimeConfig.systemPrompt ?: "你是一个工作流执行助手。"
+        val template = runtimeConfig.promptTemplate ?: runtimeConfig.prompt ?: "请根据输入给出结果：{{input_json}}"
 
         val renderedPrompt = renderTemplate(template, mergedInputs)
         val client = LLMClient()
@@ -363,6 +377,7 @@ print(json.dumps(result, ensure_ascii=False))
                         code = it.config.code,
                         codeFile = it.config.codeFile,
                         prompt = it.config.prompt,
+                        agentConfigFile = it.config.agentConfigFile,
                         promptTemplate = it.config.promptTemplate,
                         systemPrompt = it.config.systemPrompt,
                         apiEndpoint = it.config.apiEndpoint,

@@ -141,4 +141,33 @@ def main(inputs):
         assertFalse(result.logs.any { it.contains("执行节点: agent_001") })
     }
 
+    @Test
+    fun `run workflow fails when agent config file is missing`() {
+        val service = WorkflowService()
+        val workflowDir = Files.createTempDirectory("workflow-service-agent-missing-config-test").toFile()
+
+        val workflow = WorkflowDefinition(
+            id = "wf-service-agent-missing-config",
+            name = "service-agent-missing-config",
+            description = "",
+            nodes = listOf(
+                NodeDefinition("start", "start", "start", PositionDefinition(0, 0), NodeConfigDefinition()),
+                NodeDefinition("agent_001", "agent", "agent", PositionDefinition(0, 0), NodeConfigDefinition(agentConfigFile = "nodes/agent_001_config.json")),
+                NodeDefinition("end", "end", "end", PositionDefinition(0, 0), NodeConfigDefinition())
+            ),
+            edges = listOf(
+                EdgeDefinition("e1", "start", "agent_001"),
+                EdgeDefinition("e2", "agent_001", "end")
+            ),
+            variables = emptyMap()
+        )
+
+        File(workflowDir, "workflow.json").writeText(gson.toJson(workflow))
+
+        val result = service.runWorkflow(workflowDir.absolutePath)
+
+        assertFalse(result.success)
+        assertTrue(result.validationErrors.any { it.contains("agent 节点配置文件不存在") })
+    }
+
 }

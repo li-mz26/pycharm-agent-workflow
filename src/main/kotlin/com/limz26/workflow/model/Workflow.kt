@@ -70,6 +70,7 @@ data class NodeConfig(
     val code: String? = null,                    // code 节点
     val codeFile: String? = null,                // code 节点脚本路径
     val prompt: String? = null,                  // agent 节点
+    val agentConfigFile: String? = null,         // agent 节点配置文件路径
     val promptTemplate: String? = null,          // agent 节点模板
     val systemPrompt: String? = null,            // agent 节点 system prompt
     val apiEndpoint: String? = null,             // agent 节点 endpoint
@@ -88,6 +89,7 @@ data class NodeConfig(
         code?.let { fields.add("\"code\": \"${escapeJson(it)}\"") }
         codeFile?.let { fields.add("\"codeFile\": \"${escapeJson(it)}\"") }
         prompt?.let { fields.add("\"prompt\": \"${escapeJson(it)}\"") }
+        agentConfigFile?.let { fields.add("\"agentConfigFile\": \"${escapeJson(it)}\"") }
         promptTemplate?.let { fields.add("\"promptTemplate\": \"${escapeJson(it)}\"") }
         systemPrompt?.let { fields.add("\"systemPrompt\": \"${escapeJson(it)}\"") }
         apiEndpoint?.let { fields.add("\"apiEndpoint\": \"${escapeJson(it)}\"") }

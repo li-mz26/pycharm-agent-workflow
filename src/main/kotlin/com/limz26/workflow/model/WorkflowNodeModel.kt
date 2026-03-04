@@ -1,7 +1,5 @@
 package com.limz26.workflow.model
 
-import com.google.gson.JsonObject
-
 /**
  * 面向对象节点模型：不同节点类型通过子类承载各自行为。
  */
@@ -17,17 +15,16 @@ sealed class WorkflowNodeModel(open val definition: NodeDefinition) {
             require(definition.type == "agent") { "AgentNodeModel 仅支持 agent 节点" }
         }
 
-        fun mergeConfigPatch(configObj: JsonObject): AgentNodeModel {
+        fun withConfigFile(path: String): AgentNodeModel {
             val merged = definition.config.copy(
-                prompt = configObj.stringValue("prompt", definition.config.prompt),
-                promptFile = configObj.stringValue("promptFile", definition.config.promptFile),
-                promptTemplate = configObj.stringValue("promptTemplate", definition.config.promptTemplate),
-                systemPrompt = configObj.stringValue("systemPrompt", definition.config.systemPrompt),
-                apiEndpoint = configObj.stringValue("apiEndpoint", definition.config.apiEndpoint),
-                apiKey = configObj.stringValue("apiKey", definition.config.apiKey),
-                model = configObj.stringValue("model", definition.config.model),
-                inputs = configObj.mapValue("inputs", definition.config.inputs),
-                outputs = configObj.mapValue("outputs", definition.config.outputs)
+                agentConfigFile = path,
+                prompt = null,
+                promptFile = null,
+                promptTemplate = null,
+                systemPrompt = null,
+                apiEndpoint = null,
+                apiKey = null,
+                model = null
             )
             return AgentNodeModel(definition.copy(config = merged))
         }
@@ -58,18 +55,4 @@ sealed class WorkflowNodeModel(open val definition: NodeDefinition) {
             }
         }
     }
-}
-
-private fun JsonObject.stringValue(key: String, fallback: String?): String? {
-    if (!has(key)) return fallback
-    val value = get(key)
-    return if (value.isJsonNull) null else value.asString
-}
-
-private fun JsonObject.mapValue(key: String, fallback: Map<String, String>): Map<String, String> {
-    if (!has(key)) return fallback
-    val value = get(key)
-    if (value.isJsonNull) return emptyMap()
-    if (!value.isJsonObject) return fallback
-    return value.asJsonObject.entrySet().associate { (k, v) -> k to (if (v.isJsonNull) "" else v.asString) }
 }
