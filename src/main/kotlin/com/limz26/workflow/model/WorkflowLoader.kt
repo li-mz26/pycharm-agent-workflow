@@ -91,20 +91,13 @@ class WorkflowLoader {
                 )
             }
             "agent" -> {
-                // 优先从外部文件加载提示词
-                val promptFromFile = node.config.promptFile?.let { promptFilePath ->
-                    val promptFile = File(workflowDir, promptFilePath)
-                    if (promptFile.exists()) promptFile.readText() else null
-                }
-                
-                val finalPrompt = promptFromFile ?: node.config.prompt
-                
-                val configFile = File(nodesDir, "${node.id}_config.json")
+                val configPath = node.config.agentConfigFile ?: "nodes/${node.id}_config.json"
+                val configFile = File(workflowDir, configPath)
                 NodeFiles(
                     codeContent = null,
                     codeFilePath = null,
-                    promptContent = finalPrompt,
-                    promptFilePath = node.config.promptFile ?: "nodes/${node.id}_prompt.md",
+                    promptContent = null,
+                    promptFilePath = null,
                     configContent = if (configFile.exists()) configFile.readText() else null
                 )
             }
@@ -166,11 +159,15 @@ data class NodeConfigDefinition(
     val codeFile: String? = null,                // 外部代码文件路径，如 "nodes/process_data.py"
     val prompt: String? = null,
     val promptFile: String? = null,              // 外部提示词文件路径
+    val agentConfigFile: String? = null,         // agent 配置文件路径，如 "nodes/agent_001_config.json"
     val promptTemplate: String? = null,
     val systemPrompt: String? = null,
     val apiEndpoint: String? = null,
     val apiKey: String? = null,
     val model: String? = null,
+    val branchField: String? = null,             // branch 节点：取上游输出 json 的字段路径（如 "result.status"）
+    val branchCases: Map<String, String> = emptyMap(), // branch 节点：case 值 -> 下一节点 ID
+    val defaultTarget: String? = null,           // branch 节点：默认下一节点 ID
     val condition: String? = null,
     val method: String? = null,
     val url: String? = null,

@@ -144,6 +144,95 @@ def main(inputs):
         assertTrue(result.logs.any { it.contains("\"value\": 42") || it.contains("\"value\":42") })
     }
 
+    @Test
+    fun `write python script file creates file in workflow dir`() {
+        val service = WorkflowMcpService()
+        val workflowDir = Files.createTempDirectory("workflow-write-script-test").toFile()
+
+        val result = service.writePythonScriptFile(
+            workflowDir.absolutePath,
+            "nodes/code_001.py",
+            "def main(inputs):\n    return {\"ok\": True}\n"
+        )
+
+        assertEquals("nodes/code_001.py", normalizePath(result["scriptPath"]))
+        val scriptFile = File(workflowDir, "nodes/code_001.py")
+        assertTrue(scriptFile.exists())
+        assertTrue(scriptFile.readText().contains("def main"))
+    }
+
+    @Test
+    fun `write agent node config file creates config json`() {
+        val service = WorkflowMcpService()
+        val workflowDir = Files.createTempDirectory("workflow-write-agent-config-test").toFile()
+        val workflow = WorkflowDefinition(
+            id = "wf-agent-config",
+            name = "wf-agent-config",
+            description = "",
+            nodes = listOf(
+                NodeDefinition("start_001", "start", "start", PositionDefinition(0, 0), NodeConfigDefinition()),
+                NodeDefinition("agent_001", "agent", "agent", PositionDefinition(0, 0), NodeConfigDefinition()),
+                NodeDefinition("end_001", "end", "end", PositionDefinition(0, 0), NodeConfigDefinition())
+            ),
+            edges = listOf(
+                EdgeDefinition("e1", "start_001", "agent_001"),
+                EdgeDefinition("e2", "agent_001", "end_001")
+            ),
+            variables = emptyMap()
+        )
+        File(workflowDir, "workflow.json").writeText(gson.toJson(workflow))
+
+        val result = service.writeAgentNodeConfigFile(
+            workflowDir.absolutePath,
+            "agent_001",
+            "{\"model\":\"gpt-4o-mini\",\"apiEndpoint\":\"https://api.example.com\",\"apiKey\":\"secret\",\"temperature\":0.2}"
+        )
+
+        assertEquals("nodes/agent_001_config.json", normalizePath(result["configPath"]))
+        val configFile = File(workflowDir, "nodes/agent_001_config.json")
+        assertTrue(configFile.exists())
+        assertTrue(configFile.readText().contains("gpt-4o-mini"))
+
+        val updatedWorkflow = gson.fromJson(File(workflowDir, "workflow.json").readText(), WorkflowDefinition::class.java)
+        val agentNode = updatedWorkflow.nodes.first { it.id == "agent_001" }
+        assertEquals("nodes/agent_001_config.json", normalizePath(agentNode.config.agentConfigFile))
+        assertEquals(null, agentNode.config.model)
+        assertEquals(null, agentNode.config.apiEndpoint)
+        assertEquals(null, agentNode.config.apiKey)
+    }
+
+    @Test
+    fun `write agent node config rejects non agent node`() {
+        val service = WorkflowMcpService()
+        val workflowDir = Files.createTempDirectory("workflow-write-non-agent-config-test").toFile()
+        val workflow = WorkflowDefinition(
+            id = "wf-non-agent-config",
+            name = "wf-non-agent-config",
+            description = "",
+            nodes = listOf(
+                NodeDefinition("start_001", "start", "start", PositionDefinition(0, 0), NodeConfigDefinition()),
+                NodeDefinition("code_001", "code", "code", PositionDefinition(0, 0), NodeConfigDefinition()),
+                NodeDefinition("end_001", "end", "end", PositionDefinition(0, 0), NodeConfigDefinition())
+            ),
+            edges = listOf(
+                EdgeDefinition("e1", "start_001", "code_001"),
+                EdgeDefinition("e2", "code_001", "end_001")
+            ),
+            variables = emptyMap()
+        )
+        File(workflowDir, "workflow.json").writeText(gson.toJson(workflow))
+
+        val ex = org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            service.writeAgentNodeConfigFile(
+                workflowDir.absolutePath,
+                "code_001",
+                "{\"model\":\"gpt-4o-mini\"}"
+            )
+        }
+
+        assertTrue(ex.message!!.contains("仅支持 agent 节点配置写入"))
+    }
+
 
     private fun writeWorkflow(workflowDir: File) {
         val workflow = WorkflowDefinition(
@@ -163,5 +252,9 @@ def main(inputs):
         )
 
         File(workflowDir, "workflow.json").writeText(gson.toJson(workflow))
+    }
+
+    private fun normalizePath(value: Any?): String? {
+        return value?.toString()?.replace('\\', '/')
     }
 }

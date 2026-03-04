@@ -51,6 +51,7 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
         "code" to Color(33, 150, 243),
         "agent" to Color(156, 39, 176),
         "condition" to Color(255, 152, 0),
+        "branch" to Color(255, 152, 0),
         "http" to Color(0, 150, 136),
         "variable" to Color(121, 85, 72)
     )
@@ -497,6 +498,12 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
             "condition" -> node.config.condition?.let {
                 details.add("条件: $it")
             }
+            "branch" -> {
+                node.config.branchField?.let { details.add("字段: $it") }
+                if (node.config.branchCases.isNotEmpty()) {
+                    details.add("case: ${node.config.branchCases.keys.joinToString(",")}")
+                }
+            }
         }
 
         if (details.isNotEmpty()) {
@@ -529,6 +536,7 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
             "code" -> "{ }"
             "agent" -> "🤖"
             "condition" -> "?"
+            "branch" -> "⎇"
             "http" -> "🌐"
             "variable" -> "$"
             else -> "●"
@@ -643,7 +651,7 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
             })
         } else {
             val addNodeMenu = JMenu("添加节点")
-            listOf("code" to "代码节点", "agent" to "Agent节点", "condition" to "条件节点", "http" to "HTTP节点", "variable" to "变量节点").forEach { (type, label) ->
+            listOf("code" to "代码节点", "agent" to "Agent节点", "branch" to "分支节点", "http" to "HTTP节点", "variable" to "变量节点").forEach { (type, label) ->
                 addNodeMenu.add(JMenuItem(label).apply {
                     addActionListener { addNodeAtPopup(type, label) }
                 })
@@ -743,11 +751,15 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
                         code = node.config.code,
                         codeFile = node.config.codeFile,
                         prompt = node.config.prompt,
+                        agentConfigFile = node.config.agentConfigFile,
                         promptTemplate = node.config.promptTemplate,
                         systemPrompt = node.config.systemPrompt,
                         apiEndpoint = node.config.apiEndpoint,
                         apiKey = node.config.apiKey,
                         model = node.config.model,
+                        branchField = node.config.branchField,
+                        branchCases = node.config.branchCases,
+                        defaultTarget = node.config.defaultTarget,
                         condition = node.config.condition,
                         method = node.config.method,
                         url = node.config.url,
@@ -796,11 +808,15 @@ class WorkflowCanvas(private val project: Project? = null) : JPanel() {
                         code = node.config.code,
                         codeFile = node.config.codeFile,
                         prompt = node.config.prompt,
+                        agentConfigFile = node.config.agentConfigFile,
                         promptTemplate = node.config.promptTemplate,
                         systemPrompt = node.config.systemPrompt,
                         apiEndpoint = node.config.apiEndpoint,
                         apiKey = node.config.apiKey,
                         model = node.config.model,
+                        branchField = node.config.branchField,
+                        branchCases = node.config.branchCases,
+                        defaultTarget = node.config.defaultTarget,
                         condition = node.config.condition,
                         method = node.config.method,
                         url = node.config.url,

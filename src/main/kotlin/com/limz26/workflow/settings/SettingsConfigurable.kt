@@ -4,7 +4,6 @@ import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.components.service
 import com.intellij.ui.components.JBPasswordField
 import com.intellij.ui.components.JBTextField
-import com.intellij.util.ui.JBUI
 import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JPanel
@@ -18,10 +17,10 @@ class SettingsConfigurable : Configurable {
     private var apiKeyField: JBPasswordField? = null
     private var apiEndpointField: JBTextField? = null
     private var modelField: JBTextField? = null
-    private var workflowPathField: JBTextField? = null
     private var autoDetectCheckbox: JCheckBox? = null
     private var mcpEnabledCheckbox: JCheckBox? = null
     private var mcpPortField: JBTextField? = null
+    private var pythonPathField: JBTextField? = null
 
     override fun getDisplayName(): String = "Agent Workflow (LLM 配置)"
 
@@ -56,24 +55,14 @@ class SettingsConfigurable : Configurable {
         modelField?.text = settings.model
         panel?.add(modelField!!, gbc)
         
-        // 工作流路径配置
-        gbc.gridx = 0; gbc.gridy = 3; gbc.weightx = 0.0
-        gbc.insets = Insets(20, 5, 5, 5)
-        panel?.add(JLabel("工作流路径:"), gbc)
-        gbc.gridx = 1; gbc.weightx = 1.0
-        workflowPathField = JBTextField()
-        workflowPathField?.text = settings.workflowPath
-        workflowPathField?.toolTipText = "留空则使用项目根目录"
-        panel?.add(workflowPathField!!, gbc)
-        
-        gbc.gridx = 0; gbc.gridy = 4; gbc.gridwidth = 2
+        gbc.gridx = 0; gbc.gridy = 3; gbc.gridwidth = 2
         gbc.insets = Insets(5, 5, 5, 5)
         autoDetectCheckbox = JCheckBox("自动检测工作流文件夹")
         autoDetectCheckbox?.isSelected = settings.autoDetectWorkflows
         autoDetectCheckbox?.toolTipText = "自动在项目目录中查找工作流文件夹"
         panel?.add(autoDetectCheckbox!!, gbc)
 
-        gbc.gridx = 0; gbc.gridy = 5; gbc.gridwidth = 1; gbc.weightx = 0.0
+        gbc.gridx = 0; gbc.gridy = 4; gbc.gridwidth = 1; gbc.weightx = 0.0
         panel?.add(JLabel("MCP 服务端口:"), gbc)
         gbc.gridx = 1; gbc.weightx = 1.0
         mcpPortField = JBTextField()
@@ -81,20 +70,28 @@ class SettingsConfigurable : Configurable {
         mcpPortField?.toolTipText = "内置 MCP 服务端口"
         panel?.add(mcpPortField!!, gbc)
 
-        gbc.gridx = 0; gbc.gridy = 6; gbc.gridwidth = 2; gbc.weightx = 1.0
+        gbc.gridx = 0; gbc.gridy = 5; gbc.gridwidth = 2; gbc.weightx = 1.0
         mcpEnabledCheckbox = JCheckBox("启用内置 MCP 服务")
         mcpEnabledCheckbox?.isSelected = settings.mcpServerEnabled
         panel?.add(mcpEnabledCheckbox!!, gbc)
-        
+
+        gbc.gridx = 0; gbc.gridy = 6; gbc.gridwidth = 1; gbc.weightx = 0.0
+        panel?.add(JLabel("Python 路径:"), gbc)
+        gbc.gridx = 1; gbc.weightx = 1.0
+        pythonPathField = JBTextField()
+        pythonPathField?.text = settings.pythonPath
+        pythonPathField?.toolTipText = "Python 解释器路径，例如 python3 或 /usr/bin/python3"
+        panel?.add(pythonPathField!!, gbc)
+
         // 说明文本
-        gbc.gridy = 7; gbc.weighty = 1.0
+        gbc.gridy = 7; gbc.gridwidth = 2; gbc.weighty = 1.0
         gbc.anchor = GridBagConstraints.NORTH
         val noteLabel = JLabel("""
             <html>
             <body style='width: 400px; color: gray;'>
             <b>说明：</b><br/>
             • API Endpoint 支持任何 OpenAI 兼容格式的服务<br/>
-            • 工作流路径为空时，默认使用当前打开的项目路径<br/>
+            • 工作流路径请在主界面「选择工作流目录」按钮中设置<br/>
             • 启用自动检测后，插件会查找包含 workflow 文件的目录
             </body>
             </html>
@@ -109,10 +106,10 @@ class SettingsConfigurable : Configurable {
         return apiKeyField?.text != settings.apiKey ||
                apiEndpointField?.text != settings.apiEndpoint ||
                modelField?.text != settings.model ||
-               workflowPathField?.text != settings.workflowPath ||
                autoDetectCheckbox?.isSelected != settings.autoDetectWorkflows ||
                mcpEnabledCheckbox?.isSelected != settings.mcpServerEnabled ||
-               (mcpPortField?.text?.toIntOrNull() ?: settings.mcpServerPort) != settings.mcpServerPort
+               (mcpPortField?.text?.toIntOrNull() ?: settings.mcpServerPort) != settings.mcpServerPort ||
+               (pythonPathField?.text ?: settings.pythonPath) != settings.pythonPath
     }
 
     override fun apply() {
@@ -120,10 +117,10 @@ class SettingsConfigurable : Configurable {
         settings.apiKey = apiKeyField?.text ?: ""
         settings.apiEndpoint = apiEndpointField?.text ?: settings.apiEndpoint
         settings.model = modelField?.text ?: settings.model
-        settings.workflowPath = workflowPathField?.text ?: ""
         settings.autoDetectWorkflows = autoDetectCheckbox?.isSelected ?: true
         settings.mcpServerEnabled = mcpEnabledCheckbox?.isSelected ?: true
         settings.mcpServerPort = (mcpPortField?.text?.toIntOrNull() ?: settings.mcpServerPort).coerceIn(1, 65535)
+        settings.pythonPath = pythonPathField?.text?.takeIf { it.isNotBlank() } ?: "python3"
     }
 
     override fun reset() {
@@ -131,9 +128,9 @@ class SettingsConfigurable : Configurable {
         apiKeyField?.text = settings.apiKey
         apiEndpointField?.text = settings.apiEndpoint
         modelField?.text = settings.model
-        workflowPathField?.text = settings.workflowPath
         autoDetectCheckbox?.isSelected = settings.autoDetectWorkflows
         mcpEnabledCheckbox?.isSelected = settings.mcpServerEnabled
         mcpPortField?.text = settings.mcpServerPort.toString()
+        pythonPathField?.text = settings.pythonPath
     }
 }

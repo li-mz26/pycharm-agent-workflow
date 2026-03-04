@@ -1,5 +1,6 @@
 package com.limz26.workflow.ui
 
+import com.google.gson.GsonBuilder
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
@@ -36,13 +37,14 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     private val settings = service<AppSettings>()
     private val mcpService = service<WorkflowMcpService>()
     private val workflowService = service<WorkflowService>()
+    private val gson = GsonBuilder().setPrettyPrinting().create()
     private var currentWorkflow: Workflow? = null
     private var loadedWorkflows: List<LoadedWorkflow> = emptyList()
     private var selectedWorkflow: LoadedWorkflow? = null
     private val mainSplitter = JBSplitter(false, 0.35f)
-    private var isChatCollapsed = false
+    private var isChatCollapsed = true
     private val mcpToggleButton = JButton("启用MCP")
-    private val chatToggleButton = JButton("隐藏对话")
+    private val chatToggleButton = JButton("展开对话")
 
     private val chatArea = JTextArea().apply {
         isEditable = false
@@ -102,8 +104,12 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         val leftPanel = createLeftPanel()
         val canvasPanel = createCanvasPanel()
 
-        mainSplitter.firstComponent = leftPanel
+        mainSplitter.firstComponent = if (isChatCollapsed) JPanel() else leftPanel
         mainSplitter.secondComponent = canvasPanel
+        if (isChatCollapsed) {
+            mainSplitter.proportion = 0.0f
+            mainSplitter.dividerWidth = 1
+        }
 
         setContent(mainSplitter)
         showWelcomeMessage()
@@ -121,7 +127,12 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     }
 
     private fun initWorkflowFolders() {
-        loadedWorkflows = WorkflowDetector.detectWorkflowFolders(project)
+        val customPath = settings.workflowPath.trim()
+        loadedWorkflows = if (customPath.isNotEmpty()) {
+            WorkflowDetector.detectWorkflowFolders(java.io.File(customPath))
+        } else {
+            WorkflowDetector.detectWorkflowFolders(project)
+        }
         updateWorkflowCombo()
     }
 
@@ -199,11 +210,15 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
                         code = nodeDef.config.code,
                         codeFile = nodeDef.config.codeFile,
                         prompt = nodeDef.config.prompt,
+                        agentConfigFile = nodeDef.config.agentConfigFile,
                         promptTemplate = nodeDef.config.promptTemplate,
                         systemPrompt = nodeDef.config.systemPrompt,
                         apiEndpoint = nodeDef.config.apiEndpoint,
                         apiKey = nodeDef.config.apiKey,
                         model = nodeDef.config.model,
+                        branchField = nodeDef.config.branchField,
+                        branchCases = nodeDef.config.branchCases,
+                        defaultTarget = nodeDef.config.defaultTarget,
                         inputs = nodeDef.config.inputs,
                         outputs = nodeDef.config.outputs
                     )
@@ -254,6 +269,13 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         topBar.border = JBUI.Borders.empty(4)
         val selectorPanel = JPanel(BorderLayout(6, 0))
         selectorPanel.add(JLabel("工作流"), BorderLayout.WEST)
+
+        val selectWorkflowRootBtn = JButton("选择工作流目录")
+        selectWorkflowRootBtn.toolTipText = "选择工作流文件夹所在路径"
+        selectWorkflowRootBtn.addActionListener { onSelectWorkflowRootPath() }
+
+        val comboPanel = JPanel(BorderLayout(6, 0))
+        comboPanel.add(selectWorkflowRootBtn, BorderLayout.WEST)
         workflowCombo.renderer = DefaultListCellRenderer()
         workflowCombo.addActionListener {
             val idx = workflowCombo.selectedIndex
@@ -261,7 +283,8 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
                 loadWorkflowFolder(loadedWorkflows[idx])
             }
         }
-        selectorPanel.add(workflowCombo, BorderLayout.CENTER)
+        comboPanel.add(workflowCombo, BorderLayout.CENTER)
+        selectorPanel.add(comboPanel, BorderLayout.CENTER)
         topBar.add(selectorPanel, BorderLayout.CENTER)
 
         val rightActions = JPanel(BorderLayout(6, 0))
@@ -357,11 +380,13 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         fun addField(label: String, field: JComponent) {
             agentForm.add(JLabel(label)); agentForm.add(field); agentForm.add(Box.createVerticalStrut(6))
         }
+        val configPathField = JTextField()
         val apiField = JTextField()
         val keyField = JTextField()
         val modelField = JTextField()
         val systemArea = JTextArea(3, 20).apply { lineWrap = true; wrapStyleWord = true }
         val templateArea = JTextArea(4, 20).apply { lineWrap = true; wrapStyleWord = true }
+        addField("配置文件路径", configPathField)
         addField("API Endpoint", apiField)
         addField("API Key", keyField)
         addField("Model", modelField)
@@ -369,6 +394,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         addField("提示词模板", JBScrollPane(templateArea))
         val agentSaveBtn = JButton("保存Agent配置")
         agentForm.add(agentSaveBtn)
+        panel.putClientProperty("agentConfigPathField", configPathField)
         panel.putClientProperty("agentApiField", apiField)
         panel.putClientProperty("agentKeyField", keyField)
         panel.putClientProperty("agentModelField", modelField)
@@ -380,13 +406,19 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         val condForm = JPanel(BorderLayout(0, 8))
         condForm.border = JBUI.Borders.empty(8)
         val rowsPanel = JPanel().apply { layout = BoxLayout(this, BoxLayout.Y_AXIS) }
-        val addRowBtn = JButton("添加条件")
-        val condSaveBtn = JButton("保存条件流向")
+        val addRowBtn = JButton("添加分支case")
+        val condSaveBtn = JButton("保存分支流向")
         val btnPanel = JPanel(GridLayout(1, 2, 6, 0)).apply {
             add(addRowBtn)
             add(condSaveBtn)
         }
-        condForm.add(JLabel("条件分支配置"), BorderLayout.NORTH)
+        val branchHeader = JPanel(BorderLayout(0, 6))
+        branchHeader.add(JLabel("分支配置（switch）"), BorderLayout.NORTH)
+        val switchField = JTextField()
+        switchField.toolTipText = "从上游输出 JSON 读取字段路径，如 data.status"
+        branchHeader.add(switchField, BorderLayout.SOUTH)
+        panel.putClientProperty("branchFieldInput", switchField)
+        condForm.add(branchHeader, BorderLayout.NORTH)
         condForm.add(JBScrollPane(rowsPanel), BorderLayout.CENTER)
         condForm.add(btnPanel, BorderLayout.SOUTH)
         panel.putClientProperty("condRowsPanel", rowsPanel)
@@ -422,7 +454,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         when (node.type) {
             "code" -> bindCodeForm(panel, node, cardLayout, cardPanel)
             "agent" -> bindAgentForm(panel, node, cardLayout, cardPanel)
-            "condition" -> bindConditionForm(panel, node, cardLayout, cardPanel)
+            "condition", "branch" -> bindConditionForm(panel, node, cardLayout, cardPanel)
             else -> cardLayout.show(cardPanel, "empty")
         }
     }
@@ -439,6 +471,7 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     }
 
     private fun bindAgentForm(panel: JPanel, node: NodeDefinition, cardLayout: CardLayout, cardPanel: JPanel) {
+        val configPathField = panel.getClientProperty("agentConfigPathField") as? JTextField ?: return
         val apiField = panel.getClientProperty("agentApiField") as? JTextField ?: return
         val keyField = panel.getClientProperty("agentKeyField") as? JTextField ?: return
         val modelField = panel.getClientProperty("agentModelField") as? JTextField ?: return
@@ -446,39 +479,82 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         val templateArea = panel.getClientProperty("agentTemplateArea") as? JTextArea ?: return
         val saveBtn = panel.getClientProperty("agentSaveBtn") as? JButton ?: return
 
-        apiField.text = node.config.apiEndpoint.orEmpty()
-        keyField.text = node.config.apiKey.orEmpty()
-        modelField.text = node.config.model.orEmpty()
-        systemArea.text = node.config.systemPrompt.orEmpty()
-        templateArea.text = node.config.promptTemplate.orEmpty()
+        val configPath = node.config.agentConfigFile ?: "nodes/${node.id}_config.json"
+        configPathField.text = configPath
+
+        val configFromFile = selectedWorkflow?.baseDir?.let { baseDir ->
+            runCatching {
+                val file = java.io.File(baseDir, configPath)
+                if (!file.exists()) null else gson.fromJson(file.readText(), AgentNodeFileConfig::class.java)
+            }.getOrNull()
+        }
+
+        apiField.text = configFromFile?.apiEndpoint.orEmpty()
+        keyField.text = configFromFile?.apiKey.orEmpty()
+        modelField.text = configFromFile?.model.orEmpty()
+        systemArea.text = configFromFile?.systemPrompt.orEmpty()
+        templateArea.text = configFromFile?.promptTemplate.orEmpty()
 
         saveBtn.actionListeners.forEach { saveBtn.removeActionListener(it) }
         saveBtn.addActionListener {
+            val path = configPathField.text.trim().ifEmpty { "nodes/${node.id}_config.json" }
+            val payload = AgentNodeFileConfig(
+                apiEndpoint = apiField.text.trim(),
+                apiKey = keyField.text.trim(),
+                model = modelField.text.trim(),
+                systemPrompt = systemArea.text,
+                promptTemplate = templateArea.text
+            )
+
+            selectedWorkflow?.baseDir?.let { baseDir ->
+                val file = java.io.File(baseDir, path)
+                file.parentFile?.mkdirs()
+                file.writeText(gson.toJson(payload))
+            }
+
             updateNodeConfig(node.id) { cfg ->
                 cfg.copy(
-                    apiEndpoint = apiField.text.trim(),
-                    apiKey = keyField.text.trim(),
-                    model = modelField.text.trim(),
-                    systemPrompt = systemArea.text,
-                    promptTemplate = templateArea.text
+                    agentConfigFile = path,
+                    prompt = null,
+                    promptTemplate = null,
+                    systemPrompt = null,
+                    apiEndpoint = null,
+                    apiKey = null,
+                    model = null
                 )
             }
         }
         cardLayout.show(cardPanel, "agent")
     }
 
+    private data class AgentNodeFileConfig(
+        val apiEndpoint: String? = null,
+        val apiKey: String? = null,
+        val model: String? = null,
+        val systemPrompt: String? = null,
+        val promptTemplate: String? = null
+    )
+
     private fun bindConditionForm(panel: JPanel, node: NodeDefinition, cardLayout: CardLayout, cardPanel: JPanel) {
         val rowsPanel = panel.getClientProperty("condRowsPanel") as? JPanel ?: return
+        val branchFieldInput = panel.getClientProperty("branchFieldInput") as? JTextField ?: return
         val addBtn = panel.getClientProperty("condAddBtn") as? JButton ?: return
         val saveBtn = panel.getClientProperty("condSaveBtn") as? JButton ?: return
 
+        branchFieldInput.text = node.config.branchField.orEmpty()
         rowsPanel.removeAll()
-        val edges = currentWorkflow?.edges?.filter { it.source == node.id }.orEmpty()
-        if (edges.isEmpty()) {
-            addConditionRow(rowsPanel, "", "")
+        if (node.config.branchCases.isNotEmpty()) {
+            node.config.branchCases.forEach { (caseValue, target) ->
+                addConditionRow(rowsPanel, caseValue, target)
+            }
         } else {
-            edges.forEach { edge ->
-                addConditionRow(rowsPanel, edge.condition.orEmpty(), edge.target)
+            val edges = currentWorkflow?.edges?.filter { it.source == node.id }.orEmpty()
+            if (edges.isEmpty()) {
+                addConditionRow(rowsPanel, "", "")
+            } else {
+                edges.forEach { edge ->
+                    addConditionRow(rowsPanel, edge.condition.orEmpty(), edge.target)
+                }
             }
         }
         rowsPanel.revalidate()
@@ -503,10 +579,25 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
             }
             val wf = currentWorkflow ?: return@addActionListener
             val keep = wf.edges.filterNot { it.source == node.id }
+            val branchCases = parsed.associate { (cond, target) -> cond to target }
             val newEdges = parsed.map { (cond, target) ->
                 WorkflowEdge(source = node.id, target = target, condition = cond.ifBlank { null })
             }
-            currentWorkflow = wf.copy(edges = keep + newEdges)
+            currentWorkflow = wf.copy(
+                edges = keep + newEdges,
+                nodes = wf.nodes.map { n ->
+                    if (n.id == node.id) {
+                        n.copy(
+                            config = n.config.copy(
+                                branchField = branchFieldInput.text.trim(),
+                                branchCases = branchCases,
+                                defaultTarget = null,
+                                condition = null
+                            )
+                        )
+                    } else n
+                }
+            )
             canvas.setWorkflow(currentWorkflow!!, autoLayout = false)
         }
         cardLayout.show(cardPanel, "condition")
@@ -514,10 +605,15 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
 
     private fun addConditionRow(rowsPanel: JPanel, condition: String, target: String) {
         val row = JPanel(GridLayout(1, 3, 6, 0))
+        val rowHeight = 34
+        row.preferredSize = Dimension(0, rowHeight)
+        row.minimumSize = Dimension(0, rowHeight)
+        row.maximumSize = Dimension(Int.MAX_VALUE, rowHeight)
         row.border = JBUI.Borders.empty(0, 0, 6, 0)
         val conditionField = JTextField(condition)
         val targetField = JTextField(target)
         val removeBtn = JButton("删除")
+        removeBtn.preferredSize = Dimension(72, rowHeight)
         row.putClientProperty("condField", conditionField)
         row.putClientProperty("targetField", targetField)
         removeBtn.addActionListener {
@@ -693,6 +789,31 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         } else {
             appendWorkflowLog("测试运行失败：${result.validationErrors.joinToString("; ")}")
         }
+    }
+
+    private fun onSelectWorkflowRootPath() {
+        val chooser = JFileChooser().apply {
+            dialogTitle = "选择工作流文件夹所在目录"
+            fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+            isAcceptAllFileFilterUsed = false
+            selectedFile = when {
+                settings.workflowPath.isNotBlank() -> java.io.File(settings.workflowPath)
+                !project.basePath.isNullOrBlank() -> java.io.File(project.basePath!!)
+                else -> null
+            }
+        }
+
+        val result = chooser.showOpenDialog(this)
+        if (result != JFileChooser.APPROVE_OPTION) return
+        val dir = chooser.selectedFile ?: return
+        if (!dir.exists() || !dir.isDirectory) {
+            Messages.showErrorDialog(project, "请选择有效目录", "工作流目录选择失败")
+            return
+        }
+
+        settings.workflowPath = dir.absolutePath
+        appendWorkflowLog("工作流根目录已切换: ${dir.absolutePath}")
+        initWorkflowFolders()
     }
 
 

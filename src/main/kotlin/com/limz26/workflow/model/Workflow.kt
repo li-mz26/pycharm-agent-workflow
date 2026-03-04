@@ -57,6 +57,7 @@ enum class NodeType(val value: String) {
     START("start"),
     END("end"),
     CONDITION("condition"),
+    BRANCH("branch"),
     CODE("code"),
     AGENT("agent"),
     HTTP("http"),
@@ -70,11 +71,15 @@ data class NodeConfig(
     val code: String? = null,                    // code 节点
     val codeFile: String? = null,                // code 节点脚本路径
     val prompt: String? = null,                  // agent 节点
+    val agentConfigFile: String? = null,         // agent 节点配置文件路径
     val promptTemplate: String? = null,          // agent 节点模板
     val systemPrompt: String? = null,            // agent 节点 system prompt
     val apiEndpoint: String? = null,             // agent 节点 endpoint
     val apiKey: String? = null,                  // agent 节点 key
     val model: String? = null,                   // agent 节点
+    val branchField: String? = null,             // branch 节点字段路径
+    val branchCases: Map<String, String> = emptyMap(), // branch case -> target
+    val defaultTarget: String? = null,           // branch 默认 target
     val condition: String? = null,               // condition 节点
     val method: String? = null,                  // http 节点
     val url: String? = null,                     // http 节点
@@ -88,11 +93,15 @@ data class NodeConfig(
         code?.let { fields.add("\"code\": \"${escapeJson(it)}\"") }
         codeFile?.let { fields.add("\"codeFile\": \"${escapeJson(it)}\"") }
         prompt?.let { fields.add("\"prompt\": \"${escapeJson(it)}\"") }
+        agentConfigFile?.let { fields.add("\"agentConfigFile\": \"${escapeJson(it)}\"") }
         promptTemplate?.let { fields.add("\"promptTemplate\": \"${escapeJson(it)}\"") }
         systemPrompt?.let { fields.add("\"systemPrompt\": \"${escapeJson(it)}\"") }
         apiEndpoint?.let { fields.add("\"apiEndpoint\": \"${escapeJson(it)}\"") }
         apiKey?.let { fields.add("\"apiKey\": \"${escapeJson(it)}\"") }
         model?.let { fields.add("\"model\": \"$it\"") }
+        branchField?.let { fields.add("\"branchField\": \"${escapeJson(it)}\"") }
+        if (branchCases.isNotEmpty()) fields.add("\"branchCases\": {${branchCases.entries.joinToString(",") { "\"${it.key}\":\"${it.value}\"" }}}")
+        defaultTarget?.let { fields.add("\"defaultTarget\": \"${escapeJson(it)}\"") }
         condition?.let { fields.add("\"condition\": \"${escapeJson(it)}\"") }
         method?.let { fields.add("\"method\": \"$it\"") }
         url?.let { fields.add("\"url\": \"$it\"") }

@@ -47,13 +47,10 @@ class WorkflowExporter(private val projectBasePath: String) {
                     else -> Pair(node.config.code, null)
                 }
                 
-                val (promptRef, promptFileRef) = when (node.type) {
-                    NodeType.AGENT -> {
-                        // 提示词在外部文件
-                        val fileRef = "nodes/${node.id}_prompt.md"
-                        Pair(null, fileRef)
-                    }
-                    else -> Pair(node.config.prompt, null)
+                val agentConfigRef = if (node.type == NodeType.AGENT) {
+                    node.config.agentConfigFile ?: "nodes/${node.id}_config.json"
+                } else {
+                    null
                 }
                 
                 NodeDefinition(
@@ -64,9 +61,12 @@ class WorkflowExporter(private val projectBasePath: String) {
                     config = NodeConfigDefinition(
                         code = codeRef,
                         codeFile = codeFileRef,
-                        prompt = promptRef,
-                        promptFile = promptFileRef,
-                        model = node.config.model,
+                        prompt = null,
+                        promptFile = null,
+                        agentConfigFile = agentConfigRef,
+                        branchField = node.config.branchField,
+                        branchCases = node.config.branchCases,
+                        defaultTarget = node.config.defaultTarget,
                         condition = node.config.condition,
                         method = node.config.method,
                         url = node.config.url,
@@ -106,18 +106,21 @@ class WorkflowExporter(private val projectBasePath: String) {
                 File(nodesDir, "${node.id}.py").writeText(code)
             }
             NodeType.AGENT -> {
-                // 导出提示词文件
-                val prompt = node.config.prompt ?: "# TODO: Define prompt for ${node.name}\n\nDescribe the agent's task here..."
-                File(nodesDir, "${node.id}_prompt.md").writeText(prompt)
-                
                 // 导出配置
                 val config = AgentConfig(
+                    apiEndpoint = node.config.apiEndpoint,
+                    apiKey = node.config.apiKey,
                     model = node.config.model ?: "gpt-4",
+                    systemPrompt = node.config.systemPrompt,
+                    promptTemplate = node.config.promptTemplate,
                     temperature = 0.7,
                     inputs = node.config.inputs,
                     outputs = node.config.outputs
                 )
-                File(nodesDir, "${node.id}_config.json").writeText(gson.toJson(config))
+                val configPath = node.config.agentConfigFile ?: "nodes/${node.id}_config.json"
+                val configFile = File(nodesDir.parentFile, configPath)
+                configFile.parentFile?.mkdirs()
+                configFile.writeText(gson.toJson(config))
             }
             else -> {
                 // 其他节点类型，如果有特殊配置也导出
@@ -165,7 +168,7 @@ if __name__ == "__main__":
         val nodeTable = workflow.nodes.joinToString("\n") { node ->
             val fileInfo = when (node.type) {
                 NodeType.CODE -> "→ `${node.id}.py`"
-                NodeType.AGENT -> "→ `${node.id}_prompt.md`, `${node.id}_config.json`"
+                NodeType.AGENT -> "→ `${node.id}_config.json`"
                 else -> ""
             }
             "| ${node.id} | ${node.type.value} | ${node.name} | $fileInfo |"
@@ -194,7 +197,7 @@ ${workflow.name.replace(Regex("[^a-zA-Z0-9_\u4e00-\u9fa5]"), "_")}/
 ${workflow.nodes.filter { it.type == NodeType.CODE || it.type == NodeType.AGENT }.joinToString("\n") { 
     when (it.type) {
         NodeType.CODE -> "│   ├── ${it.id}.py"
-        NodeType.AGENT -> "│   ├── ${it.id}_prompt.md\n│   ├── ${it.id}_config.json"
+        NodeType.AGENT -> "│   ├── ${it.id}_config.json"
         else -> ""
     }
 }}
@@ -206,14 +209,18 @@ ${workflow.nodes.filter { it.type == NodeType.CODE || it.type == NodeType.AGENT 
 1. 在代码中加载 `workflow.json` 解析 DAG 结构
 2. 根据节点类型执行对应逻辑：
    - `code` 节点：执行 `nodes/{node_id}.py`
-   - `agent` 节点：读取 `nodes/{node_id}_prompt.md` 和 `_config.json`，调用 LLM
+   - `agent` 节点：读取 `nodes/{node_id}_config.json`，调用 LLM
    - `condition` 节点：评估条件表达式决定分支
 3. 按照 `edges` 定义的顺序执行
 """.trimIndent()
     }
     
     private data class AgentConfig(
+        val apiEndpoint: String? = null,
+        val apiKey: String? = null,
         val model: String,
+        val systemPrompt: String? = null,
+        val promptTemplate: String? = null,
         val temperature: Double,
         val inputs: Map<String, String>,
         val outputs: Map<String, String>

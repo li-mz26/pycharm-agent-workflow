@@ -3,9 +3,11 @@ package com.limz26.workflow.service
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.service
 import com.limz26.workflow.agent.WorkflowAgent
 import com.limz26.workflow.llm.LLMClient
 import com.limz26.workflow.model.*
+import com.limz26.workflow.settings.AppSettings
 import java.io.File
 import java.nio.file.Files
 import java.util.ArrayDeque
@@ -73,18 +75,18 @@ class WorkflowService {
                     NodeType.START -> if (initialInput.isEmpty()) mapOf("started" to true) else initialInput
                     NodeType.END -> mergedInputs
                     NodeType.CODE -> executeCodeNode(loaded, node, mergedInputs)
-                    NodeType.AGENT -> executeAgentNode(node, mergedInputs)
+                    NodeType.AGENT -> executeAgentNode(node, mergedInputs, workflowDirPath)
+                    NodeType.BRANCH -> mergedInputs
                     else -> mergedInputs
                 }
                 outputs[node.id] = result
                 logs += "  - 输出: ${gson.toJson(result).take(300)}"
 
                 val outgoingForNode = outgoingEdges[node.id].orEmpty()
-                if (nodeType == NodeType.CONDITION) {
-                    val conditionResult = evaluateConditionResult(node, mergedInputs, result)
-                    val selected = selectConditionEdges(outgoingForNode, conditionResult)
+                if (nodeType == NodeType.BRANCH || nodeType == NodeType.CONDITION) {
+                    val selected = selectBranchEdges(node, outgoingForNode, mergedInputs, result)
                     activeEdgeIds.addAll(selected.map { it.id })
-                    logs += "  - 条件结果: $conditionResult, 命中分支: ${selected.joinToString { it.target }}"
+                    logs += "  - 分支命中: ${selected.joinToString { it.target }}"
                 } else {
                     activeEdgeIds.addAll(outgoingForNode.map { it.id })
                 }
@@ -169,7 +171,7 @@ print(json.dumps(result, ensure_ascii=False))
                 """.trimIndent()
             )
 
-            val process = ProcessBuilder("python3", runnerFile.absolutePath, codeFile.absolutePath, inputFile.absolutePath)
+            val process = ProcessBuilder(service<AppSettings>().pythonPath, runnerFile.absolutePath, codeFile.absolutePath, inputFile.absolutePath)
                 .redirectErrorStream(false)
                 .start()
 
@@ -196,13 +198,27 @@ print(json.dumps(result, ensure_ascii=False))
         }
     }
 
-    private fun executeAgentNode(node: NodeDefinition, mergedInputs: Map<String, Any?>): Map<String, Any?> {
-        val config = node.config
-        val endpoint = config.apiEndpoint ?: throw IllegalArgumentException("agent 节点缺少 apiEndpoint")
-        val apiKey = config.apiKey ?: throw IllegalArgumentException("agent 节点缺少 apiKey")
-        val model = config.model ?: "gpt-4o-mini"
-        val systemPrompt = config.systemPrompt ?: "你是一个工作流执行助手。"
-        val template = config.promptTemplate ?: config.prompt ?: "请根据输入给出结果：{{input_json}}"
+    private data class AgentRuntimeConfig(
+        val apiEndpoint: String? = null,
+        val apiKey: String? = null,
+        val model: String? = null,
+        val systemPrompt: String? = null,
+        val promptTemplate: String? = null,
+        val prompt: String? = null
+    )
+
+    private fun executeAgentNode(node: NodeDefinition, mergedInputs: Map<String, Any?>, workflowDirPath: String): Map<String, Any?> {
+        val configPath = node.config.agentConfigFile ?: "nodes/${node.id}_config.json"
+        val configFile = File(workflowDirPath, configPath)
+        require(configFile.exists()) { "agent 节点配置文件不存在: $configPath" }
+
+        val runtimeConfig = gson.fromJson(configFile.readText(), AgentRuntimeConfig::class.java)
+
+        val endpoint = runtimeConfig.apiEndpoint ?: throw IllegalArgumentException("agent 配置缺少 apiEndpoint")
+        val apiKey = runtimeConfig.apiKey ?: throw IllegalArgumentException("agent 配置缺少 apiKey")
+        val model = runtimeConfig.model ?: "gpt-4o-mini"
+        val systemPrompt = runtimeConfig.systemPrompt ?: "你是一个工作流执行助手。"
+        val template = runtimeConfig.promptTemplate ?: runtimeConfig.prompt ?: "请根据输入给出结果：{{input_json}}"
 
         val renderedPrompt = renderTemplate(template, mergedInputs)
         val client = LLMClient()
@@ -252,6 +268,32 @@ print(json.dumps(result, ensure_ascii=False))
         val jsonLine = stdout.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.lastOrNull() ?: "{}"
         val parsed = gson.fromJson(jsonLine, Map::class.java)
         return parsed as? Map<*, *> ?: emptyMap<String, Any?>()
+    }
+
+    private fun selectBranchEdges(
+        node: NodeDefinition,
+        outgoing: List<EdgeDefinition>,
+        mergedInputs: Map<String, Any?>,
+        executionResult: Map<String, Any?>
+    ): List<EdgeDefinition> {
+        if (outgoing.isEmpty()) return emptyList()
+
+        // condition 节点向后兼容
+        if (node.type == "condition") {
+            val conditionResult = evaluateConditionResult(node, mergedInputs, executionResult)
+            val matched = outgoing.filter { edgeMatchesConditionResult(it.condition, conditionResult) }
+            if (matched.isNotEmpty()) return matched
+            if (outgoing.size == 1) return outgoing
+            return if (conditionResult) listOf(outgoing.first()) else listOf(outgoing.last())
+        }
+
+        val fieldPath = node.config.branchField?.trim().orEmpty()
+        if (fieldPath.isBlank()) return outgoing.take(1)
+
+        val value = resolvePath(mergedInputs, fieldPath)?.toString() ?: ""
+        val target = node.config.branchCases[value] ?: node.config.defaultTarget
+        if (target.isNullOrBlank()) return emptyList()
+        return outgoing.filter { it.target == target }
     }
 
     private fun evaluateConditionResult(
@@ -363,11 +405,15 @@ print(json.dumps(result, ensure_ascii=False))
                         code = it.config.code,
                         codeFile = it.config.codeFile,
                         prompt = it.config.prompt,
+                        agentConfigFile = it.config.agentConfigFile,
                         promptTemplate = it.config.promptTemplate,
                         systemPrompt = it.config.systemPrompt,
                         apiEndpoint = it.config.apiEndpoint,
                         apiKey = it.config.apiKey,
                         model = it.config.model,
+                        branchField = it.config.branchField,
+                        branchCases = it.config.branchCases,
+                        defaultTarget = it.config.defaultTarget,
                         condition = it.config.condition,
                         method = it.config.method,
                         url = it.config.url,

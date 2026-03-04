@@ -85,7 +85,7 @@ def main(inputs):
     }
 
     @Test
-    fun `run workflow condition node routes to false branch`() {
+    fun `run workflow branch node routes by switch case`() {
         val service = WorkflowService()
         val workflowDir = Files.createTempDirectory("workflow-service-condition-test").toFile()
         val nodesDir = File(workflowDir, "nodes").apply { mkdirs() }
@@ -97,16 +97,22 @@ def main(inputs):
             nodes = listOf(
                 NodeDefinition("start", "start", "start", PositionDefinition(0, 0), NodeConfigDefinition()),
                 NodeDefinition("code_prepare", "code", "prepare", PositionDefinition(0, 0), NodeConfigDefinition(codeFile = "nodes/prepare.py")),
-                NodeDefinition("condition_001", "condition", "condition", PositionDefinition(0, 0), NodeConfigDefinition(condition = "len(cleaned_data) > 0")),
+                NodeDefinition(
+                    "branch_001",
+                    "branch",
+                    "branch",
+                    PositionDefinition(0, 0),
+                    NodeConfigDefinition(branchField = "status", branchCases = mapOf("has_data" to "agent_001", "empty" to "code_002"))
+                ),
                 NodeDefinition("agent_001", "code", "agent_001", PositionDefinition(0, 0), NodeConfigDefinition(codeFile = "nodes/agent.py")),
                 NodeDefinition("code_002", "code", "code_002", PositionDefinition(0, 0), NodeConfigDefinition(codeFile = "nodes/code2.py")),
                 NodeDefinition("end", "end", "end", PositionDefinition(0, 0), NodeConfigDefinition())
             ),
             edges = listOf(
                 EdgeDefinition("e1", "start", "code_prepare"),
-                EdgeDefinition("e2", "code_prepare", "condition_001"),
-                EdgeDefinition("e3", "condition_001", "agent_001", "有数据"),
-                EdgeDefinition("e4", "condition_001", "code_002", "无数据"),
+                EdgeDefinition("e2", "code_prepare", "branch_001"),
+                EdgeDefinition("e3", "branch_001", "agent_001", "has_data"),
+                EdgeDefinition("e4", "branch_001", "code_002", "empty"),
                 EdgeDefinition("e5", "agent_001", "end"),
                 EdgeDefinition("e6", "code_002", "end")
             ),
@@ -117,7 +123,7 @@ def main(inputs):
         File(nodesDir, "prepare.py").writeText(
             """
 def main(inputs):
-    return {"cleaned_data": []}
+    return {"status": "empty", "cleaned_data": []}
             """.trimIndent()
         )
         File(nodesDir, "agent.py").writeText(
@@ -136,9 +142,38 @@ def main(inputs):
         val result = service.runWorkflow(workflowDir.absolutePath)
 
         assertTrue(result.success)
-        assertTrue(result.logs.any { it.contains("条件结果: false") })
+        assertTrue(result.logs.any { it.contains("分支命中") })
         assertTrue(result.logs.any { it.contains("执行节点: code_002") })
         assertFalse(result.logs.any { it.contains("执行节点: agent_001") })
+    }
+
+    @Test
+    fun `run workflow fails when agent config file is missing`() {
+        val service = WorkflowService()
+        val workflowDir = Files.createTempDirectory("workflow-service-agent-missing-config-test").toFile()
+
+        val workflow = WorkflowDefinition(
+            id = "wf-service-agent-missing-config",
+            name = "service-agent-missing-config",
+            description = "",
+            nodes = listOf(
+                NodeDefinition("start", "start", "start", PositionDefinition(0, 0), NodeConfigDefinition()),
+                NodeDefinition("agent_001", "agent", "agent", PositionDefinition(0, 0), NodeConfigDefinition(agentConfigFile = "nodes/agent_001_config.json")),
+                NodeDefinition("end", "end", "end", PositionDefinition(0, 0), NodeConfigDefinition())
+            ),
+            edges = listOf(
+                EdgeDefinition("e1", "start", "agent_001"),
+                EdgeDefinition("e2", "agent_001", "end")
+            ),
+            variables = emptyMap()
+        )
+
+        File(workflowDir, "workflow.json").writeText(gson.toJson(workflow))
+
+        val result = service.runWorkflow(workflowDir.absolutePath)
+
+        assertFalse(result.success)
+        assertTrue(result.validationErrors.any { it.contains("agent 节点配置文件不存在") })
     }
 
 }
