@@ -165,17 +165,39 @@ def main(inputs):
     fun `write agent node config file creates config json`() {
         val service = WorkflowMcpService()
         val workflowDir = Files.createTempDirectory("workflow-write-agent-config-test").toFile()
+        val workflow = WorkflowDefinition(
+            id = "wf-agent-config",
+            name = "wf-agent-config",
+            description = "",
+            nodes = listOf(
+                NodeDefinition("start_001", "start", "start", PositionDefinition(0, 0), NodeConfigDefinition()),
+                NodeDefinition("agent_001", "agent", "agent", PositionDefinition(0, 0), NodeConfigDefinition()),
+                NodeDefinition("end_001", "end", "end", PositionDefinition(0, 0), NodeConfigDefinition())
+            ),
+            edges = listOf(
+                EdgeDefinition("e1", "start_001", "agent_001"),
+                EdgeDefinition("e2", "agent_001", "end_001")
+            ),
+            variables = emptyMap()
+        )
+        File(workflowDir, "workflow.json").writeText(gson.toJson(workflow))
 
         val result = service.writeAgentNodeConfigFile(
             workflowDir.absolutePath,
             "agent_001",
-            "{\"model\":\"gpt-4o-mini\",\"temperature\":0.2}"
+            "{\"model\":\"gpt-4o-mini\",\"apiEndpoint\":\"https://api.example.com\",\"apiKey\":\"secret\",\"temperature\":0.2}"
         )
 
         assertEquals("nodes/agent_001_config.json", result["configPath"])
         val configFile = File(workflowDir, "nodes/agent_001_config.json")
         assertTrue(configFile.exists())
         assertTrue(configFile.readText().contains("gpt-4o-mini"))
+
+        val updatedWorkflow = gson.fromJson(File(workflowDir, "workflow.json").readText(), WorkflowDefinition::class.java)
+        val agentNode = updatedWorkflow.nodes.first { it.id == "agent_001" }
+        assertEquals("gpt-4o-mini", agentNode.config.model)
+        assertEquals("https://api.example.com", agentNode.config.apiEndpoint)
+        assertEquals("secret", agentNode.config.apiKey)
     }
 
 
