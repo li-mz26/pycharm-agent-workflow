@@ -54,6 +54,26 @@ project/
 ./gradlew runIde
 ```
 
+## 受限网络环境（如 Codex 云）说明
+
+如果运行测试时出现 `pycharmPC:2024.1` 下载 `403`，通常是网络出口拦截了 JetBrains 仓库或 cache-redirector，并非业务代码问题。
+
+可用方案：
+
+1. 使用本机已安装的 PyCharm 作为 SDK（避免下载）
+
+```bash
+PYCHARM_HOME="/path/to/pycharm" gradle test --tests com.limz26.workflow.mcp.WorkflowMcpAlarmWorkflowIntegrationTest
+```
+
+或：
+
+```bash
+gradle test -Pintellij.localPath=/path/to/pycharm --tests com.limz26.workflow.mcp.WorkflowMcpAlarmWorkflowIntegrationTest
+```
+
+2. 已在 `gradle.properties` 关闭 JetBrains cache-redirector，减少部分网络环境下的 403。
+
 ## License
 
 Private

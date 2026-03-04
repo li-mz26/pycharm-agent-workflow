@@ -39,6 +39,13 @@ intellij {
     version.set("2024.1")
     type.set("PC")
 
+    // Allow using a preinstalled local PyCharm to avoid downloading IDE artifacts in restricted networks.
+    val localIdePath = (findProperty("intellij.localPath") as String?)
+        ?: System.getenv("PYCHARM_HOME")
+    if (!localIdePath.isNullOrBlank()) {
+        localPath.set(localIdePath)
+    }
+
     plugins.set(listOf())
     instrumentCode.set(false)
 }
