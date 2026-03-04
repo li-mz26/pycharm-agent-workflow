@@ -2,7 +2,6 @@ package com.limz26.workflow.mcp
 
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
-import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -539,17 +538,18 @@ class WorkflowMcpService {
         val workflowDef = loadWorkflowDefinition(workflowDirPath)
         val targetNode = workflowDef.nodes.find { it.id == nodeId }
             ?: throw IllegalArgumentException("节点不存在: $nodeId")
-        require(targetNode.type == "agent") { "仅支持 agent 节点配置写入: $nodeId" }
+        val agentNode = WorkflowNodeModel.fromDefinition(targetNode) as? WorkflowNodeModel.AgentNodeModel
+            ?: throw IllegalArgumentException("仅支持 agent 节点配置写入: $nodeId")
 
         val configObj = JsonParser.parseString(configJson).asJsonObject
         val nodesDir = File(workflowDir, "nodes").apply { mkdirs() }
         val target = File(nodesDir, "${nodeId}_config.json")
         target.writeText(gson.toJson(configObj))
 
-        val updatedNodeConfig = mergeAgentNodeConfig(targetNode.config, configObj)
+        val updatedAgentNode = agentNode.mergeConfigPatch(configObj)
         val updatedWorkflow = workflowDef.copy(
             nodes = workflowDef.nodes.map { node ->
-                if (node.id == nodeId) node.copy(config = updatedNodeConfig) else node
+                if (node.id == nodeId) updatedAgentNode.toDefinition() else node
             }
         )
         val workflowJson = saveWorkflowDefinition(workflowDirPath, updatedWorkflow)
@@ -559,34 +559,6 @@ class WorkflowMcpService {
             "absolutePath" to target.absolutePath,
             "bytes" to target.length(),
             "workflowJson" to workflowJson
-        )
-    }
-
-    private fun mergeAgentNodeConfig(current: NodeConfigDefinition, configObj: JsonObject): NodeConfigDefinition {
-        fun stringValue(key: String, fallback: String?): String? {
-            if (!configObj.has(key)) return fallback
-            val value = configObj.get(key)
-            return if (value.isJsonNull) null else value.asString
-        }
-
-        fun mapValue(key: String, fallback: Map<String, String>): Map<String, String> {
-            if (!configObj.has(key)) return fallback
-            val value = configObj.get(key)
-            if (value.isJsonNull) return emptyMap()
-            if (!value.isJsonObject) return fallback
-            return value.asJsonObject.entrySet().associate { (k, v) -> k to (if (v.isJsonNull) "" else v.asString) }
-        }
-
-        return current.copy(
-            prompt = stringValue("prompt", current.prompt),
-            promptFile = stringValue("promptFile", current.promptFile),
-            promptTemplate = stringValue("promptTemplate", current.promptTemplate),
-            systemPrompt = stringValue("systemPrompt", current.systemPrompt),
-            apiEndpoint = stringValue("apiEndpoint", current.apiEndpoint),
-            apiKey = stringValue("apiKey", current.apiKey),
-            model = stringValue("model", current.model),
-            inputs = mapValue("inputs", current.inputs),
-            outputs = mapValue("outputs", current.outputs)
         )
     }
 

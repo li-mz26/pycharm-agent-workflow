@@ -200,6 +200,38 @@ def main(inputs):
         assertEquals("secret", agentNode.config.apiKey)
     }
 
+    @Test
+    fun `write agent node config rejects non agent node`() {
+        val service = WorkflowMcpService()
+        val workflowDir = Files.createTempDirectory("workflow-write-non-agent-config-test").toFile()
+        val workflow = WorkflowDefinition(
+            id = "wf-non-agent-config",
+            name = "wf-non-agent-config",
+            description = "",
+            nodes = listOf(
+                NodeDefinition("start_001", "start", "start", PositionDefinition(0, 0), NodeConfigDefinition()),
+                NodeDefinition("code_001", "code", "code", PositionDefinition(0, 0), NodeConfigDefinition()),
+                NodeDefinition("end_001", "end", "end", PositionDefinition(0, 0), NodeConfigDefinition())
+            ),
+            edges = listOf(
+                EdgeDefinition("e1", "start_001", "code_001"),
+                EdgeDefinition("e2", "code_001", "end_001")
+            ),
+            variables = emptyMap()
+        )
+        File(workflowDir, "workflow.json").writeText(gson.toJson(workflow))
+
+        val ex = org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            service.writeAgentNodeConfigFile(
+                workflowDir.absolutePath,
+                "code_001",
+                "{\"model\":\"gpt-4o-mini\"}"
+            )
+        }
+
+        assertTrue(ex.message!!.contains("仅支持 agent 节点配置写入"))
+    }
+
 
     private fun writeWorkflow(workflowDir: File) {
         val workflow = WorkflowDefinition(
