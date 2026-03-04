@@ -19,7 +19,7 @@
         Initial release.
     ]]></change-notes>
 
-    <idea-version since-build="241" until-build="251.*"/>
+    <idea-version since-build="241" until-build="253.*"/>
 
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.python</depends>

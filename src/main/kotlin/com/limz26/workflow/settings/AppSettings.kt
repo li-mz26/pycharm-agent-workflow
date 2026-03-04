@@ -19,7 +19,8 @@ class AppSettings : PersistentStateComponent<AppSettings.State> {
         var workflowPath: String = "",  // 工作流文件夹路径，空则使用项目根目录
         var autoDetectWorkflows: Boolean = true,  // 自动检测工作流文件夹
         var mcpServerEnabled: Boolean = true,
-        var mcpServerPort: Int = 8765
+        var mcpServerPort: Int = 8765,
+        var pythonPath: String = "python3"  // Python 解释器路径
     )
 
     private var state = State()
@@ -61,6 +62,10 @@ class AppSettings : PersistentStateComponent<AppSettings.State> {
     var mcpServerPort: Int
         get() = state.mcpServerPort
         set(value) { state.mcpServerPort = value }
+
+    var pythonPath: String
+        get() = state.pythonPath
+        set(value) { state.pythonPath = value }
     
     /**
      * 获取实际的工作流路径

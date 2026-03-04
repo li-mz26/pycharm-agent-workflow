@@ -3,9 +3,11 @@ package com.limz26.workflow.service
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.service
 import com.limz26.workflow.agent.WorkflowAgent
 import com.limz26.workflow.llm.LLMClient
 import com.limz26.workflow.model.*
+import com.limz26.workflow.settings.AppSettings
 import java.io.File
 import java.nio.file.Files
 import java.util.ArrayDeque
@@ -169,7 +171,7 @@ print(json.dumps(result, ensure_ascii=False))
                 """.trimIndent()
             )
 
-            val process = ProcessBuilder("python3", runnerFile.absolutePath, codeFile.absolutePath, inputFile.absolutePath)
+            val process = ProcessBuilder(service<AppSettings>().pythonPath, runnerFile.absolutePath, codeFile.absolutePath, inputFile.absolutePath)
                 .redirectErrorStream(false)
                 .start()
 

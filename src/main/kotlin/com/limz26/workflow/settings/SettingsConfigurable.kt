@@ -20,6 +20,7 @@ class SettingsConfigurable : Configurable {
     private var autoDetectCheckbox: JCheckBox? = null
     private var mcpEnabledCheckbox: JCheckBox? = null
     private var mcpPortField: JBTextField? = null
+    private var pythonPathField: JBTextField? = null
 
     override fun getDisplayName(): String = "Agent Workflow (LLM 配置)"
 
@@ -73,9 +74,17 @@ class SettingsConfigurable : Configurable {
         mcpEnabledCheckbox = JCheckBox("启用内置 MCP 服务")
         mcpEnabledCheckbox?.isSelected = settings.mcpServerEnabled
         panel?.add(mcpEnabledCheckbox!!, gbc)
-        
+
+        gbc.gridx = 0; gbc.gridy = 6; gbc.gridwidth = 1; gbc.weightx = 0.0
+        panel?.add(JLabel("Python 路径:"), gbc)
+        gbc.gridx = 1; gbc.weightx = 1.0
+        pythonPathField = JBTextField()
+        pythonPathField?.text = settings.pythonPath
+        pythonPathField?.toolTipText = "Python 解释器路径，例如 python3 或 /usr/bin/python3"
+        panel?.add(pythonPathField!!, gbc)
+
         // 说明文本
-        gbc.gridy = 6; gbc.weighty = 1.0
+        gbc.gridy = 7; gbc.gridwidth = 2; gbc.weighty = 1.0
         gbc.anchor = GridBagConstraints.NORTH
         val noteLabel = JLabel("""
             <html>
@@ -99,7 +108,8 @@ class SettingsConfigurable : Configurable {
                modelField?.text != settings.model ||
                autoDetectCheckbox?.isSelected != settings.autoDetectWorkflows ||
                mcpEnabledCheckbox?.isSelected != settings.mcpServerEnabled ||
-               (mcpPortField?.text?.toIntOrNull() ?: settings.mcpServerPort) != settings.mcpServerPort
+               (mcpPortField?.text?.toIntOrNull() ?: settings.mcpServerPort) != settings.mcpServerPort ||
+               (pythonPathField?.text ?: settings.pythonPath) != settings.pythonPath
     }
 
     override fun apply() {
@@ -110,6 +120,7 @@ class SettingsConfigurable : Configurable {
         settings.autoDetectWorkflows = autoDetectCheckbox?.isSelected ?: true
         settings.mcpServerEnabled = mcpEnabledCheckbox?.isSelected ?: true
         settings.mcpServerPort = (mcpPortField?.text?.toIntOrNull() ?: settings.mcpServerPort).coerceIn(1, 65535)
+        settings.pythonPath = pythonPathField?.text?.takeIf { it.isNotBlank() } ?: "python3"
     }
 
     override fun reset() {
@@ -120,5 +131,6 @@ class SettingsConfigurable : Configurable {
         autoDetectCheckbox?.isSelected = settings.autoDetectWorkflows
         mcpEnabledCheckbox?.isSelected = settings.mcpServerEnabled
         mcpPortField?.text = settings.mcpServerPort.toString()
+        pythonPathField?.text = settings.pythonPath
     }
 }

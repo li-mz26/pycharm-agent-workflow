@@ -55,12 +55,13 @@ class WorkflowModelTest {
     
     @Test
     fun `test node type values`() {
-        assertEquals(7, NodeType.values().size)
+        assertEquals(8, NodeType.values().size)
         assertNotNull(NodeType.START)
         assertNotNull(NodeType.END)
         assertNotNull(NodeType.CODE)
         assertNotNull(NodeType.AGENT)
         assertNotNull(NodeType.CONDITION)
+        assertNotNull(NodeType.BRANCH)
         assertNotNull(NodeType.HTTP)
         assertNotNull(NodeType.VARIABLE)
     }

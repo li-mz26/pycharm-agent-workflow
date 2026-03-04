@@ -50,10 +50,35 @@ intellij {
     instrumentCode.set(false)
 }
 
+// Ensure the coroutines agent jar required by the test task exists after a clean build.
+// When initializeIntelliJPlugin is disabled, the jar is never downloaded; we fall back to
+// the kotlinx-coroutines-core-jvm artifact already present on the runtimeClasspath.
+val ensureCoroutinesAgent by tasks.registering {
+    val agentJar = layout.buildDirectory.file("tmp/initializeIntelliJPlugin/coroutines-javaagent.jar")
+    outputs.file(agentJar)
+    onlyIf { !agentJar.get().asFile.exists() }
+    doLast {
+        val dest = agentJar.get().asFile
+        dest.parentFile.mkdirs()
+        val source = configurations.runtimeClasspath.get()
+            .find { it.name.startsWith("kotlinx-coroutines-core-jvm") }
+        if (source != null) {
+            source.copyTo(dest, overwrite = true)
+        } else {
+            // Fallback: minimal valid empty ZIP/JAR (EOCD record)
+            dest.writeBytes(byteArrayOf(0x50, 0x4B, 0x05, 0x06) + ByteArray(18))
+        }
+    }
+}
+
 tasks {
     // Skip: avoid flaky online check
     withType<org.jetbrains.intellij.tasks.InitializeIntelliJPluginTask> {
         enabled = false
+    }
+
+    withType<Test> {
+        dependsOn(ensureCoroutinesAgent)
     }
 
     withType<JavaCompile> {
@@ -88,7 +113,7 @@ tasks {
 
     patchPluginXml {
         sinceBuild.set("241")
-        untilBuild.set("251.*")
+        untilBuild.set("253.*")
     }
 
     signPlugin {
