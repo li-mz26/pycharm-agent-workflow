@@ -123,7 +123,12 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
     }
 
     private fun initWorkflowFolders() {
-        loadedWorkflows = WorkflowDetector.detectWorkflowFolders(project)
+        val customPath = settings.workflowPath.trim()
+        loadedWorkflows = if (customPath.isNotEmpty()) {
+            WorkflowDetector.detectWorkflowFolders(java.io.File(customPath))
+        } else {
+            WorkflowDetector.detectWorkflowFolders(project)
+        }
         updateWorkflowCombo()
     }
 
@@ -257,6 +262,13 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         topBar.border = JBUI.Borders.empty(4)
         val selectorPanel = JPanel(BorderLayout(6, 0))
         selectorPanel.add(JLabel("工作流"), BorderLayout.WEST)
+
+        val selectWorkflowRootBtn = JButton("选择工作流目录")
+        selectWorkflowRootBtn.toolTipText = "选择工作流文件夹所在路径（将覆盖插件配置中的工作流路径）"
+        selectWorkflowRootBtn.addActionListener { onSelectWorkflowRootPath() }
+
+        val comboPanel = JPanel(BorderLayout(6, 0))
+        comboPanel.add(selectWorkflowRootBtn, BorderLayout.WEST)
         workflowCombo.renderer = DefaultListCellRenderer()
         workflowCombo.addActionListener {
             val idx = workflowCombo.selectedIndex
@@ -264,7 +276,8 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
                 loadWorkflowFolder(loadedWorkflows[idx])
             }
         }
-        selectorPanel.add(workflowCombo, BorderLayout.CENTER)
+        comboPanel.add(workflowCombo, BorderLayout.CENTER)
+        selectorPanel.add(comboPanel, BorderLayout.CENTER)
         topBar.add(selectorPanel, BorderLayout.CENTER)
 
         val rightActions = JPanel(BorderLayout(6, 0))
@@ -735,6 +748,31 @@ class WorkflowPanel(private val project: Project) : SimpleToolWindowPanel(false,
         } else {
             appendWorkflowLog("测试运行失败：${result.validationErrors.joinToString("; ")}")
         }
+    }
+
+    private fun onSelectWorkflowRootPath() {
+        val chooser = JFileChooser().apply {
+            dialogTitle = "选择工作流文件夹所在目录"
+            fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+            isAcceptAllFileFilterUsed = false
+            selectedFile = when {
+                settings.workflowPath.isNotBlank() -> java.io.File(settings.workflowPath)
+                !project.basePath.isNullOrBlank() -> java.io.File(project.basePath!!)
+                else -> null
+            }
+        }
+
+        val result = chooser.showOpenDialog(this)
+        if (result != JFileChooser.APPROVE_OPTION) return
+        val dir = chooser.selectedFile ?: return
+        if (!dir.exists() || !dir.isDirectory) {
+            Messages.showErrorDialog(project, "请选择有效目录", "工作流目录选择失败")
+            return
+        }
+
+        settings.workflowPath = dir.absolutePath
+        appendWorkflowLog("工作流根目录已切换: ${dir.absolutePath}")
+        initWorkflowFolders()
     }
 
 
