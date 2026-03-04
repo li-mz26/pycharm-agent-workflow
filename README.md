@@ -74,6 +74,28 @@ gradle test -Pintellij.localPath=/path/to/pycharm --tests com.limz26.workflow.mc
 
 2. 已在 `gradle.properties` 关闭 JetBrains cache-redirector，减少部分网络环境下的 403。
 
+### 域名允许列表建议
+
+如果你要在 Codex 云环境里通过网络下载 `pycharmPC`，建议把下面域名加入出网允许列表（至少先放行前两项）：
+
+- `cache-redirector.jetbrains.com`（Gradle IntelliJ 插件默认的重定向入口）
+- `www.jetbrains.com`（IntelliJ 仓库源站，cache-redirector 会回源到这里）
+- `download.jetbrains.com`（部分 IDE/依赖下载会走该域）
+- `plugins.jetbrains.com`（插件元数据与部分文档/分发链路）
+
+说明：
+
+- 如果你已配置 `org.jetbrains.intellij.buildFeature.useCacheRedirector=false`，优先确保 `www.jetbrains.com` 和 `download.jetbrains.com` 可访问。
+- 最小验证命令（可用于连通性自检）：
+
+```bash
+curl -I https://cache-redirector.jetbrains.com/www.jetbrains.com/intellij-repository/releases/com/jetbrains/intellij/pycharm/pycharmPC/2024.1/pycharmPC-2024.1.pom
+```
+
+```bash
+curl -I https://www.jetbrains.com/intellij-repository/releases/com/jetbrains/intellij/pycharm/pycharmPC/2024.1/pycharmPC-2024.1.pom
+```
+
 ## License
 
 Private
