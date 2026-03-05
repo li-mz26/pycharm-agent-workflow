@@ -5,7 +5,7 @@
   "version": "0.0.1",
   "publisher": "limz26",
   "engines": {
-    "vscode": "^1.90.0"
+    "vscode": "^1.75.0"
   },
   "categories": [
     "Other"
@@ -51,7 +51,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.12.12",
-    "@types/vscode": "^1.90.0",
+    "@types/vscode": "^1.75.0",
     "typescript": "^5.5.4",
     "@vscode/vsce": "^3.6.2"
   },
