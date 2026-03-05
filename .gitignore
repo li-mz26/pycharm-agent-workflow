@@ -38,3 +38,8 @@ build/idea-sandbox/
 
 # Local configuration
 local.properties
+
+# VS Code extension artifacts
+vscode-extension/node_modules/
+vscode-extension/*.vsix
+dist/*.vsix

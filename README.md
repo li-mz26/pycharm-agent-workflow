@@ -48,6 +48,32 @@ project/
 3. **导出**: 点击导出按钮，工作流文件夹生成在当前项目中
 4. **预览加载**: 右键工作流文件夹 → "Preview Workflow"
 
+
+## VS Code 版本（TypeScript）
+
+仓库新增 `vscode-extension/` 目录，提供基于 TypeScript 的 VS Code 插件原型，覆盖当前 PyCharm 插件的核心体验（工作流选择、DAG 可视化、节点配置、运行面板、MCP 开关、展开对话）。
+
+快速体验：
+
+```bash
+cd vscode-extension
+npm install
+npm run compile
+```
+
+然后在 VS Code 里按 `F5` 启动 Extension Development Host，执行命令 `Agent Workflow: 打开工作台`。
+
+在 VS Code 安装插件后，执行命令 `Agent Workflow: 打开工作台`，会在编辑区右侧打开工作台，并在底部 `agent workflow` Output 频道展示日志。
+
+如需生成可安装包（VSIX）：
+
+```bash
+cd vscode-extension
+npm install
+npm run package
+```
+
+
 ## 开发
 
 ```bash
