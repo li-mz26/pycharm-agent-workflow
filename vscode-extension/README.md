@@ -44,6 +44,8 @@ npm run package:out
 
 - `dist/agent-workflow-vscode.vsix`
 
+> 注意：`*.vsix` 为构建产物，已在仓库 `.gitignore` 忽略，不需要提交到 Git。
+
 ### 安装 VSIX
 
 在 VS Code 中：
