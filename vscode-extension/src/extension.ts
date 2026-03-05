@@ -183,7 +183,7 @@ function resolveState(repo: WorkflowRepository): { workflowRoot: string; workflo
 }
 
 function getWebviewHtml(): string {
-  const nonce = String(Date.now());
+  const nonce = createNonce();
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -402,3 +402,13 @@ window.addEventListener('message', (event) => {
 }
 
 export function deactivate(): void {}
+
+
+function createNonce(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < 24; i += 1) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
