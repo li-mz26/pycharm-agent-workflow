@@ -14,6 +14,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const pushState = () => {
     const state = resolveState(repo);
+    output.appendLine(`扫描工作流: 根目录=${state.workflowRoot}, 命中=${state.workflows.length}`);
     panel?.webview.postMessage({
       type: 'state',
       payload: {
@@ -84,6 +85,7 @@ export function activate(context: vscode.ExtensionContext): void {
           break;
         }
         case 'pickWorkflowRoot':
+          output.appendLine('收到 UI 请求: 选择工作流目录');
           await pickWorkflowRoot();
           break;
         case 'connectMcp': {
@@ -274,6 +276,16 @@ selectEl.onchange = () => post('selectWorkflow', { name: selectEl.value });
 
 function renderSelect(){
   selectEl.innerHTML = '';
+  if (!state.workflows.length) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = '(未发现工作流)';
+    selectEl.appendChild(option);
+    selectEl.disabled = true;
+    return;
+  }
+
+  selectEl.disabled = false;
   for (const wf of state.workflows) {
     const option = document.createElement('option');
     option.value = wf.name;
@@ -356,6 +368,7 @@ window.addEventListener('message', (event) => {
     rootLabel.textContent = '目录: ' + (msg.payload.workflowRoot || 'workflows');
     renderSelect();
     document.getElementById('runningName').textContent = state.selected ? state.selected.name : '';
+    if (!state.selected) { runStateLabel.textContent = '未发现可运行工作流'; } else { runStateLabel.textContent = ''; }
     renderCanvas();
   }
   if (msg.type === 'workflowSelected') {
