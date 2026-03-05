@@ -3,47 +3,30 @@ import { WorkflowRepository } from './workflowRepository';
 import { WorkflowEntry } from './types';
 import { McpClientBridge } from './mcpClient';
 
-export function activate(context: vscode.ExtensionContext): void {
-  const repo = new WorkflowRepository();
-  const mcp = new McpClientBridge();
+const WORKBENCH_VIEW_ID = 'agentWorkflow.workbenchView';
 
-  let panel: vscode.WebviewPanel | undefined;
+class AgentWorkflowViewProvider implements vscode.WebviewViewProvider {
+  private view: vscode.WebviewView | undefined;
 
-  const openDisposable = vscode.commands.registerCommand('agentWorkflow.openWorkbench', async () => {
-    if (panel) {
-      panel.reveal(vscode.ViewColumn.One);
-      return;
-    }
+  constructor(
+    private readonly repo: WorkflowRepository,
+    private readonly mcp: McpClientBridge
+  ) {}
 
-    panel = vscode.window.createWebviewPanel(
-      'agentWorkflowWorkbench',
-      'Agent Workflow',
-      vscode.ViewColumn.One,
-      { enableScripts: true }
-    );
+  resolveWebviewView(webviewView: vscode.WebviewView): void {
+    this.view = webviewView;
+    webviewView.webview.options = { enableScripts: true };
+    webviewView.webview.html = getWebviewHtml();
 
-    panel.webview.html = getWebviewHtml(panel.webview);
-
-    const pushState = () => {
-      const state = resolveState(repo);
-      panel?.webview.postMessage({
-        type: 'state',
-        payload: {
-          ...state,
-          mcpConnected: mcp.isConnected()
-        }
-      });
-    };
-
-    panel.webview.onDidReceiveMessage(async (message) => {
+    webviewView.webview.onDidReceiveMessage(async (message) => {
       switch (message?.type) {
         case 'refresh':
-          pushState();
+          this.pushState();
           break;
         case 'selectWorkflow': {
-          const state = resolveState(repo);
+          const state = resolveState(this.repo);
           const selected = state.workflows.find((it) => it.name === message.payload?.name);
-          panel?.webview.postMessage({ type: 'workflowSelected', payload: selected });
+          this.view?.webview.postMessage({ type: 'workflowSelected', payload: selected });
           break;
         }
         case 'pickWorkflowRoot': {
@@ -59,33 +42,36 @@ export function activate(context: vscode.ExtensionContext): void {
               picked[0].fsPath,
               vscode.ConfigurationTarget.Workspace
             );
-            pushState();
+            this.pushState();
           }
           break;
         }
         case 'connectMcp': {
           const endpoint = vscode.workspace.getConfiguration('agentWorkflow').get<string>('mcpServerUrl') ?? 'http://127.0.0.1:8788/mcp';
-          const result = await mcp.connect(endpoint);
-          const tools = await mcp.listTools();
-          panel?.webview.postMessage({ type: 'mcpStatus', payload: { connected: mcp.isConnected(), message: result, tools } });
+          const result = await this.mcp.connect(endpoint);
+          const tools = await this.mcp.listTools();
+          this.view?.webview.postMessage({
+            type: 'mcpStatus',
+            payload: { connected: this.mcp.isConnected(), message: result, tools }
+          });
           break;
         }
         case 'disconnectMcp': {
-          const result = await mcp.disconnect();
-          panel?.webview.postMessage({ type: 'mcpStatus', payload: { connected: false, message: result, tools: [] } });
+          const result = await this.mcp.disconnect();
+          this.view?.webview.postMessage({ type: 'mcpStatus', payload: { connected: false, message: result, tools: [] } });
           break;
         }
         case 'runWorkflow': {
           const name = message.payload?.name as string;
-          const state = resolveState(repo);
+          const state = resolveState(this.repo);
           const selected = state.workflows.find((it) => it.name === name);
           if (!selected) {
-            panel?.webview.postMessage({ type: 'runResult', payload: { output: '未找到工作流', logs: [] } });
+            this.view?.webview.postMessage({ type: 'runResult', payload: { output: '未找到工作流', logs: [] } });
             return;
           }
 
           const output = JSON.stringify(buildMockOutput(selected), null, 2);
-          panel?.webview.postMessage({
+          this.view?.webview.postMessage({
             type: 'runResult',
             payload: {
               output,
@@ -98,25 +84,50 @@ export function activate(context: vscode.ExtensionContext): void {
           });
           break;
         }
-        case 'openChat': {
-          vscode.commands.executeCommand('workbench.action.chat.open');
+        case 'openChat':
+          await vscode.commands.executeCommand('workbench.action.chat.open');
           break;
-        }
       }
     });
 
-    panel.onDidDispose(() => {
-      panel = undefined;
+    this.pushState();
+  }
+
+  public async reveal(): Promise<void> {
+    await vscode.commands.executeCommand(`${WORKBENCH_VIEW_ID}.focus`);
+    this.pushState();
+  }
+
+  public requestRefresh(): void {
+    this.view?.webview.postMessage({ type: 'requestRefresh' });
+  }
+
+  private pushState(): void {
+    const state = resolveState(this.repo);
+    this.view?.webview.postMessage({
+      type: 'state',
+      payload: {
+        ...state,
+        mcpConnected: this.mcp.isConnected()
+      }
     });
+  }
+}
 
-    pushState();
-  });
+export function activate(context: vscode.ExtensionContext): void {
+  const provider = new AgentWorkflowViewProvider(new WorkflowRepository(), new McpClientBridge());
 
-  const refreshDisposable = vscode.commands.registerCommand('agentWorkflow.refreshWorkflows', () => {
-    panel?.webview.postMessage({ type: 'requestRefresh' });
-  });
-
-  context.subscriptions.push(openDisposable, refreshDisposable);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(WORKBENCH_VIEW_ID, provider, {
+      webviewOptions: { retainContextWhenHidden: true }
+    }),
+    vscode.commands.registerCommand('agentWorkflow.openWorkbench', async () => {
+      await provider.reveal();
+    }),
+    vscode.commands.registerCommand('agentWorkflow.refreshWorkflows', () => {
+      provider.requestRefresh();
+    })
+  );
 }
 
 function resolveState(repo: WorkflowRepository): { workflowRoot: string; workflows: WorkflowEntry[] } {
@@ -139,9 +150,8 @@ function buildMockOutput(workflow: WorkflowEntry): Record<string, unknown> {
   };
 }
 
-function getWebviewHtml(webview: vscode.Webview): string {
+function getWebviewHtml(): string {
   const nonce = String(Date.now());
-
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>

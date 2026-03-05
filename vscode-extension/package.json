@@ -11,7 +11,8 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:agentWorkflow.openWorkbench"
+    "onCommand:agentWorkflow.openWorkbench",
+    "onView:agentWorkflow.workbenchView"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -39,6 +40,37 @@
           "description": "MCP server URL (streamable HTTP)"
         }
       }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "agentWorkflow",
+          "title": "Agent Workflow",
+          "icon": "media/workflow.svg"
+        }
+      ]
+    },
+    "views": {
+      "agentWorkflow": [
+        {
+          "id": "agentWorkflow.workbenchView",
+          "name": "工作流可视化"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "agentWorkflow.refreshWorkflows",
+          "when": "view == agentWorkflow.workbenchView",
+          "group": "navigation"
+        },
+        {
+          "command": "agentWorkflow.openWorkbench",
+          "when": "view == agentWorkflow.workbenchView",
+          "group": "navigation@2"
+        }
+      ]
     }
   },
   "scripts": {

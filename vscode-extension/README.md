@@ -21,6 +21,17 @@ npm run compile
 
 `Agent Workflow: 打开工作台`
 
+
+## 在左/右侧边栏启用
+
+安装后会在 Activity Bar 出现 **Agent Workflow** 图标：
+
+1. 点击左侧（或右侧）活动栏的 **Agent Workflow** 图标
+2. 打开视图 **工作流可视化** 即可使用
+3. 也可通过命令面板执行 `Agent Workflow: 打开工作台` 来聚焦该侧边栏视图
+
+> 如果你把 Activity Bar 放在右侧，插件会随 VS Code 布局显示在右边栏。
+
 ## 打包成可安装 VSIX
 
 ```bash
