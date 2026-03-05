@@ -23,6 +23,29 @@ export function activate(context: vscode.ExtensionContext): void {
     });
   };
 
+  const pickWorkflowRoot = async () => {
+    const picked = await vscode.window.showOpenDialog({
+      canSelectMany: false,
+      canSelectFolders: true,
+      canSelectFiles: false,
+      openLabel: '选择工作流目录'
+    });
+
+    if (!picked?.[0]) {
+      return;
+    }
+
+    await vscode.workspace.getConfiguration('agentWorkflow').update(
+      'workflowRoot',
+      picked[0].fsPath,
+      vscode.ConfigurationTarget.Workspace
+    );
+
+    output.appendLine(`设置工作流根目录: ${picked[0].fsPath}`);
+    panel?.webview.postMessage({ type: 'workflowRootChanged', payload: { workflowRoot: picked[0].fsPath } });
+    pushState();
+  };
+
   const openDisposable = vscode.commands.registerCommand('agentWorkflow.openWorkbench', async () => {
     if (panel) {
       panel.reveal(vscode.ViewColumn.Beside);
@@ -60,25 +83,9 @@ export function activate(context: vscode.ExtensionContext): void {
           }
           break;
         }
-        case 'pickWorkflowRoot': {
-          const picked = await vscode.window.showOpenDialog({
-            canSelectMany: false,
-            canSelectFolders: true,
-            canSelectFiles: false,
-            openLabel: '选择工作流目录'
-          });
-          if (picked?.[0]) {
-            await vscode.workspace.getConfiguration('agentWorkflow').update(
-              'workflowRoot',
-              picked[0].fsPath,
-              vscode.ConfigurationTarget.Workspace
-            );
-            output.appendLine(`设置工作流根目录: ${picked[0].fsPath}`);
-            panel?.webview.postMessage({ type: 'workflowRootChanged', payload: { workflowRoot: picked[0].fsPath } });
-            pushState();
-          }
+        case 'pickWorkflowRoot':
+          await pickWorkflowRoot();
           break;
-        }
         case 'connectMcp': {
           const endpoint = vscode.workspace.getConfiguration('agentWorkflow').get<string>('mcpServerUrl') ?? 'http://127.0.0.1:8788/mcp';
           const result = await mcp.connect(endpoint);
@@ -100,7 +107,6 @@ export function activate(context: vscode.ExtensionContext): void {
           const state = resolveState(repo);
           const selected = state.workflows.find((it) => it.name === name);
           if (!selected) {
-            panel?.webview.postMessage({ type: 'runResult', payload: { output: '未找到工作流', logs: [] } });
             panel?.webview.postMessage({ type: 'runState', payload: { running: false } });
             output.appendLine('运行失败: 未找到工作流');
             return;
@@ -115,28 +121,19 @@ export function activate(context: vscode.ExtensionContext): void {
               }
             }
           } catch {
-            panel?.webview.postMessage({
-              type: 'runResult',
-              payload: {
-                output: '输入 JSON 格式错误',
-                logs: ['请输入合法 JSON 对象，例如 {"raw_data": []}']
-              }
-            });
             panel?.webview.postMessage({ type: 'runState', payload: { running: false } });
             output.appendLine('运行失败: 输入 JSON 格式错误');
+            output.show(true);
             return;
           }
 
           try {
             const result = await runtime.runWorkflow(selected, initialInput);
-            panel?.webview.postMessage({
-              type: 'runResult',
-              payload: {
-                output: JSON.stringify(result.finalOutput, null, 2),
-                logs: result.logs
-              }
-            });
+            output.appendLine(`=== 工作流输出: ${selected.name} ===`);
+            output.appendLine(JSON.stringify(result.finalOutput, null, 2));
             result.logs.forEach((line) => output.appendLine(line));
+            output.appendLine('=== 结束 ===');
+            output.show(true);
           } finally {
             panel?.webview.postMessage({ type: 'runState', payload: { running: false } });
           }
@@ -166,7 +163,11 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.showInformationMessage('请先打开 Agent Workflow 工作台');
   });
 
-  context.subscriptions.push(openDisposable, refreshDisposable, output);
+  const pickRootDisposable = vscode.commands.registerCommand('agentWorkflow.pickWorkflowRoot', async () => {
+    await pickWorkflowRoot();
+  });
+
+  context.subscriptions.push(openDisposable, refreshDisposable, pickRootDisposable, output);
 }
 
 function resolveState(repo: WorkflowRepository): { workflowRoot: string; workflows: WorkflowEntry[] } {
@@ -206,23 +207,20 @@ select,button{height:28px}
 .node.http,.node.variable{background:linear-gradient(90deg,#006064,#26c6da)}
 .edge-layer{position:absolute;left:0;top:0;pointer-events:none}
 .panel{border:1px solid var(--vscode-panel-border);padding:8px;overflow:auto;min-height:0}
-.bottom{margin-top:8px;border:1px solid var(--vscode-panel-border);height:220px;display:flex;flex-direction:column;min-height:0;flex-shrink:0}
-.tabs{display:flex;gap:12px;border-bottom:1px solid var(--vscode-panel-border);padding:6px 8px}
-.tab{cursor:pointer}
-.tab.active{color:var(--vscode-textLink-foreground);font-weight:700}
-.tab-content{padding:8px;flex:1;min-height:0;overflow:auto}
-pre{margin:0;white-space:pre-wrap;word-break:break-word}
+.bottom{margin-top:8px;border:1px solid var(--vscode-panel-border);height:160px;display:flex;flex-direction:column;min-height:0;flex-shrink:0}
+.bottom-title{padding:6px 8px;border-bottom:1px solid var(--vscode-panel-border)}
+.bottom-content{padding:8px;flex:1;min-height:0}
 textarea{width:100%;height:100%;box-sizing:border-box;background:var(--vscode-input-background);color:var(--vscode-input-foreground)}
 </style>
 </head>
 <body>
   <h3 style="margin:0 0 8px 0;">工作流可视化</h3>
   <div class="toolbar">
-    <button id="pickRoot">工作流文件夹</button>
+    <button id="pickRoot" type="button">工作流文件夹</button>
     <label>工作流选择</label>
     <select id="workflowSelect" style="min-width:280px;"></select>
-    <button id="mcpBtn">启用/关闭mcp</button>
-    <button id="refreshBtn">刷新</button>
+    <button id="mcpBtn" type="button">启用/关闭mcp</button>
+    <button id="refreshBtn" type="button">刷新</button>
     <span id="workflowRootLabel" style="margin-left:auto;opacity:.8;font-size:12px;"></span>
   </div>
   <div class="main">
@@ -236,21 +234,16 @@ textarea{width:100%;height:100%;box-sizing:border-box;background:var(--vscode-in
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
-    <span>工作流输入</span>
-    <button id="runBtn">▶ 工作流运行</button>
-    <button id="chatBtn">展开对话</button>
+    <button id="runBtn" type="button">▶ 工作流运行</button>
+    <button id="chatBtn" type="button">展开对话</button>
     <span id="runningName"></span>
     <span id="runStateLabel" style="opacity:.8;font-size:12px;"></span>
   </div>
   <div class="bottom">
-    <div class="tabs">
-      <div class="tab active" data-tab="input">输入</div>
-      <div class="tab" data-tab="output">输出</div>
-      <div class="tab" data-tab="logs">日志</div>
-    </div>
-    <div class="tab-content" id="input"><textarea id="inputBox">{\n  "raw_data": []\n}</textarea></div>
-    <div class="tab-content" id="output" style="display:none;"><pre id="outputBox">等待运行...</pre></div>
-    <div class="tab-content" id="logs" style="display:none;"><pre id="logBox">暂无日志</pre></div>
+    <div class="bottom-title">工作流输入</div>
+    <div class="bottom-content"><textarea id="inputBox">{
+  "raw_data": []
+}</textarea></div>
   </div>
 <script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
@@ -268,9 +261,9 @@ function post(type, payload){ vscode.postMessage({type, payload}); }
 document.getElementById('refreshBtn').onclick = () => post('refresh');
 document.getElementById('pickRoot').onclick = () => post('pickWorkflowRoot');
 document.getElementById('chatBtn').onclick = () => post('openChat');
-document.getElementById('runBtn').onclick = () => {
+runBtn.onclick = () => {
   if(!state.selected){
-    document.getElementById('logBox').textContent = '请先选择工作流';
+    runStateLabel.textContent = '请先选择工作流';
     return;
   }
   post('runWorkflow', { name: state.selected.name, input: document.getElementById('inputBox').value });
@@ -278,17 +271,6 @@ document.getElementById('runBtn').onclick = () => {
 mcpBtn.onclick = () => post(state.mcpConnected ? 'disconnectMcp' : 'connectMcp');
 
 selectEl.onchange = () => post('selectWorkflow', { name: selectEl.value });
-
-for (const tab of document.querySelectorAll('.tab')) {
-  tab.onclick = () => {
-    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-    tab.classList.add('active');
-    const target = tab.dataset.tab;
-    document.getElementById('input').style.display = target === 'input' ? 'block' : 'none';
-    document.getElementById('output').style.display = target === 'output' ? 'block' : 'none';
-    document.getElementById('logs').style.display = target === 'logs' ? 'block' : 'none';
-  };
-}
 
 function renderSelect(){
   selectEl.innerHTML = '';
@@ -298,7 +280,9 @@ function renderSelect(){
     option.textContent = wf.name;
     selectEl.appendChild(option);
   }
-  if (state.selected) { selectEl.value = state.selected.name; }
+  if (state.selected) {
+    selectEl.value = state.selected.name;
+  }
 }
 
 function renderCanvas(){
@@ -365,16 +349,23 @@ window.addEventListener('message', (event) => {
   if (msg.type === 'state') {
     state.workflows = msg.payload.workflows || [];
     state.mcpConnected = Boolean(msg.payload.mcpConnected);
-    state.selected = state.workflows[0] || null;
+    const previous = state.selected?.name;
+    const selected = state.workflows.find(w => w.name === previous) || state.workflows[0] || null;
+    state.selected = selected;
     mcpBtn.textContent = state.mcpConnected ? '关闭mcp' : '启用mcp';
     rootLabel.textContent = '目录: ' + (msg.payload.workflowRoot || 'workflows');
     renderSelect();
+    document.getElementById('runningName').textContent = state.selected ? state.selected.name : '';
     renderCanvas();
   }
   if (msg.type === 'workflowSelected') {
     state.selected = msg.payload || null;
     document.getElementById('runningName').textContent = state.selected ? state.selected.name : '';
+    runStateLabel.textContent = '';
     renderCanvas();
+  }
+  if (msg.type === 'workflowRootChanged') {
+    rootLabel.textContent = '目录: ' + msg.payload.workflowRoot;
   }
   if (msg.type === 'mcpStatus') {
     state.mcpConnected = Boolean(msg.payload.connected);
@@ -382,19 +373,11 @@ window.addEventListener('message', (event) => {
     document.getElementById('mcpStatus').textContent = msg.payload.message;
     document.getElementById('mcpTools').textContent = (msg.payload.tools || []).length ? 'Tools:\n' + msg.payload.tools.join('\n') : '';
   }
-  if (msg.type === 'runResult') {
-    document.getElementById('outputBox').textContent = msg.payload.output;
-    document.getElementById('logBox').textContent = (msg.payload.logs || []).join('\n');
-  }
-
-  if (msg.type === 'workflowRootChanged') {
-    rootLabel.textContent = '目录: ' + msg.payload.workflowRoot;
-  }
   if (msg.type === 'runState') {
     const running = Boolean(msg.payload.running);
     runBtn.disabled = running;
     runBtn.textContent = running ? '运行中...' : '▶ 工作流运行';
-    runStateLabel.textContent = running ? '执行中' : '';
+    runStateLabel.textContent = running ? '执行中，详情请看底部 Output: agent workflow' : '';
   }
   if (msg.type === 'requestRefresh') {
     post('refresh');
