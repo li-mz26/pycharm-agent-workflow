@@ -74,6 +74,7 @@ export function activate(context: vscode.ExtensionContext): void {
               vscode.ConfigurationTarget.Workspace
             );
             output.appendLine(`设置工作流根目录: ${picked[0].fsPath}`);
+            panel?.webview.postMessage({ type: 'workflowRootChanged', payload: { workflowRoot: picked[0].fsPath } });
             pushState();
           }
           break;
@@ -93,12 +94,14 @@ export function activate(context: vscode.ExtensionContext): void {
           break;
         }
         case 'runWorkflow': {
+          panel?.webview.postMessage({ type: 'runState', payload: { running: true } });
           const name = message.payload?.name as string;
           const rawInput = message.payload?.input as string | undefined;
           const state = resolveState(repo);
           const selected = state.workflows.find((it) => it.name === name);
           if (!selected) {
             panel?.webview.postMessage({ type: 'runResult', payload: { output: '未找到工作流', logs: [] } });
+            panel?.webview.postMessage({ type: 'runState', payload: { running: false } });
             output.appendLine('运行失败: 未找到工作流');
             return;
           }
@@ -119,19 +122,24 @@ export function activate(context: vscode.ExtensionContext): void {
                 logs: ['请输入合法 JSON 对象，例如 {"raw_data": []}']
               }
             });
+            panel?.webview.postMessage({ type: 'runState', payload: { running: false } });
             output.appendLine('运行失败: 输入 JSON 格式错误');
             return;
           }
 
-          const result = await runtime.runWorkflow(selected, initialInput);
-          panel?.webview.postMessage({
-            type: 'runResult',
-            payload: {
-              output: JSON.stringify(result.finalOutput, null, 2),
-              logs: result.logs
-            }
-          });
-          result.logs.forEach((line) => output.appendLine(line));
+          try {
+            const result = await runtime.runWorkflow(selected, initialInput);
+            panel?.webview.postMessage({
+              type: 'runResult',
+              payload: {
+                output: JSON.stringify(result.finalOutput, null, 2),
+                logs: result.logs
+              }
+            });
+            result.logs.forEach((line) => output.appendLine(line));
+          } finally {
+            panel?.webview.postMessage({ type: 'runState', payload: { running: false } });
+          }
           break;
         }
         case 'openChat': {
@@ -215,6 +223,7 @@ textarea{width:100%;height:100%;box-sizing:border-box;background:var(--vscode-in
     <select id="workflowSelect" style="min-width:280px;"></select>
     <button id="mcpBtn">启用/关闭mcp</button>
     <button id="refreshBtn">刷新</button>
+    <span id="workflowRootLabel" style="margin-left:auto;opacity:.8;font-size:12px;"></span>
   </div>
   <div class="main">
     <div class="canvas-wrap"><div class="canvas" id="canvas"></div></div>
@@ -231,6 +240,7 @@ textarea{width:100%;height:100%;box-sizing:border-box;background:var(--vscode-in
     <button id="runBtn">▶ 工作流运行</button>
     <button id="chatBtn">展开对话</button>
     <span id="runningName"></span>
+    <span id="runStateLabel" style="opacity:.8;font-size:12px;"></span>
   </div>
   <div class="bottom">
     <div class="tabs">
@@ -249,6 +259,9 @@ const selectEl = document.getElementById('workflowSelect');
 const canvasEl = document.getElementById('canvas');
 const nodeConfigEl = document.getElementById('nodeConfig');
 const mcpBtn = document.getElementById('mcpBtn');
+const runBtn = document.getElementById('runBtn');
+const rootLabel = document.getElementById('workflowRootLabel');
+const runStateLabel = document.getElementById('runStateLabel');
 
 function post(type, payload){ vscode.postMessage({type, payload}); }
 
@@ -256,7 +269,11 @@ document.getElementById('refreshBtn').onclick = () => post('refresh');
 document.getElementById('pickRoot').onclick = () => post('pickWorkflowRoot');
 document.getElementById('chatBtn').onclick = () => post('openChat');
 document.getElementById('runBtn').onclick = () => {
-  if(state.selected){ post('runWorkflow', { name: state.selected.name, input: document.getElementById('inputBox').value }); }
+  if(!state.selected){
+    document.getElementById('logBox').textContent = '请先选择工作流';
+    return;
+  }
+  post('runWorkflow', { name: state.selected.name, input: document.getElementById('inputBox').value });
 };
 mcpBtn.onclick = () => post(state.mcpConnected ? 'disconnectMcp' : 'connectMcp');
 
@@ -350,6 +367,7 @@ window.addEventListener('message', (event) => {
     state.mcpConnected = Boolean(msg.payload.mcpConnected);
     state.selected = state.workflows[0] || null;
     mcpBtn.textContent = state.mcpConnected ? '关闭mcp' : '启用mcp';
+    rootLabel.textContent = '目录: ' + (msg.payload.workflowRoot || 'workflows');
     renderSelect();
     renderCanvas();
   }
@@ -367,6 +385,16 @@ window.addEventListener('message', (event) => {
   if (msg.type === 'runResult') {
     document.getElementById('outputBox').textContent = msg.payload.output;
     document.getElementById('logBox').textContent = (msg.payload.logs || []).join('\n');
+  }
+
+  if (msg.type === 'workflowRootChanged') {
+    rootLabel.textContent = '目录: ' + msg.payload.workflowRoot;
+  }
+  if (msg.type === 'runState') {
+    const running = Boolean(msg.payload.running);
+    runBtn.disabled = running;
+    runBtn.textContent = running ? '运行中...' : '▶ 工作流运行';
+    runStateLabel.textContent = running ? '执行中' : '';
   }
   if (msg.type === 'requestRefresh') {
     post('refresh');
