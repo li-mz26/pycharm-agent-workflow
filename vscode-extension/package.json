@@ -1,0 +1,57 @@
+{
+  "name": "agent-workflow-vscode",
+  "displayName": "Agent Workflow",
+  "description": "Workflow DAG visualizer and runner for Agent Workflow projects",
+  "version": "0.0.1",
+  "publisher": "limz26",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:agentWorkflow.openWorkbench"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "agentWorkflow.openWorkbench",
+        "title": "Agent Workflow: 打开工作台"
+      },
+      {
+        "command": "agentWorkflow.refreshWorkflows",
+        "title": "Agent Workflow: 刷新工作流"
+      }
+    ],
+    "configuration": {
+      "title": "Agent Workflow",
+      "properties": {
+        "agentWorkflow.workflowRoot": {
+          "type": "string",
+          "default": "workflows",
+          "description": "工作流根目录（相对于 Workspace）"
+        },
+        "agentWorkflow.mcpServerUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:8788/mcp",
+          "description": "MCP server URL (streamable HTTP)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.5.4"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.4"
+  }
+}
