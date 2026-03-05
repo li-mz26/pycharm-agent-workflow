@@ -63,7 +63,7 @@ npm run compile
 
 然后在 VS Code 里按 `F5` 启动 Extension Development Host，执行命令 `Agent Workflow: 打开工作台`。
 
-在 VS Code 安装插件后，可在 Activity Bar 的 **Agent Workflow** 侧边栏图标中打开 `工作流可视化` 视图。
+在 VS Code 安装插件后，执行命令 `Agent Workflow: 打开工作台`，会在编辑区右侧打开工作台，并在底部 `agent workflow` Output 频道展示日志。
 
 如需生成可安装包（VSIX）：
 

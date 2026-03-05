@@ -3,30 +3,59 @@ import { WorkflowRepository } from './workflowRepository';
 import { WorkflowEntry } from './types';
 import { McpClientBridge } from './mcpClient';
 
-const WORKBENCH_VIEW_ID = 'agentWorkflow.workbenchView';
+export function activate(context: vscode.ExtensionContext): void {
+  const repo = new WorkflowRepository();
+  const mcp = new McpClientBridge();
+  const output = vscode.window.createOutputChannel('agent workflow');
 
-class AgentWorkflowViewProvider implements vscode.WebviewViewProvider {
-  private view: vscode.WebviewView | undefined;
+  let panel: vscode.WebviewPanel | undefined;
 
-  constructor(
-    private readonly repo: WorkflowRepository,
-    private readonly mcp: McpClientBridge
-  ) {}
+  const pushState = () => {
+    const state = resolveState(repo);
+    panel?.webview.postMessage({
+      type: 'state',
+      payload: {
+        ...state,
+        mcpConnected: mcp.isConnected()
+      }
+    });
+  };
 
-  resolveWebviewView(webviewView: vscode.WebviewView): void {
-    this.view = webviewView;
-    webviewView.webview.options = { enableScripts: true };
-    webviewView.webview.html = getWebviewHtml();
+  const openDisposable = vscode.commands.registerCommand('agentWorkflow.openWorkbench', async () => {
+    if (panel) {
+      panel.reveal(vscode.ViewColumn.Beside);
+      output.show(true);
+      output.appendLine('已聚焦 Agent Workflow 工作台');
+      return;
+    }
 
-    webviewView.webview.onDidReceiveMessage(async (message) => {
+    panel = vscode.window.createWebviewPanel(
+      'agentWorkflowWorkbench',
+      'Agent Workflow',
+      vscode.ViewColumn.Beside,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true
+      }
+    );
+
+    panel.webview.html = getWebviewHtml();
+    output.show(true);
+    output.appendLine('展示 workflow 运行日志');
+
+    panel.webview.onDidReceiveMessage(async (message) => {
       switch (message?.type) {
         case 'refresh':
-          this.pushState();
+          pushState();
+          output.appendLine('刷新工作流列表');
           break;
         case 'selectWorkflow': {
-          const state = resolveState(this.repo);
+          const state = resolveState(repo);
           const selected = state.workflows.find((it) => it.name === message.payload?.name);
-          this.view?.webview.postMessage({ type: 'workflowSelected', payload: selected });
+          panel?.webview.postMessage({ type: 'workflowSelected', payload: selected });
+          if (selected) {
+            output.appendLine(`切换工作流: ${selected.name}`);
+          }
           break;
         }
         case 'pickWorkflowRoot': {
@@ -42,92 +71,78 @@ class AgentWorkflowViewProvider implements vscode.WebviewViewProvider {
               picked[0].fsPath,
               vscode.ConfigurationTarget.Workspace
             );
-            this.pushState();
+            output.appendLine(`设置工作流根目录: ${picked[0].fsPath}`);
+            pushState();
           }
           break;
         }
         case 'connectMcp': {
           const endpoint = vscode.workspace.getConfiguration('agentWorkflow').get<string>('mcpServerUrl') ?? 'http://127.0.0.1:8788/mcp';
-          const result = await this.mcp.connect(endpoint);
-          const tools = await this.mcp.listTools();
-          this.view?.webview.postMessage({
-            type: 'mcpStatus',
-            payload: { connected: this.mcp.isConnected(), message: result, tools }
-          });
+          const result = await mcp.connect(endpoint);
+          const tools = await mcp.listTools();
+          panel?.webview.postMessage({ type: 'mcpStatus', payload: { connected: mcp.isConnected(), message: result, tools } });
+          output.appendLine(result);
           break;
         }
         case 'disconnectMcp': {
-          const result = await this.mcp.disconnect();
-          this.view?.webview.postMessage({ type: 'mcpStatus', payload: { connected: false, message: result, tools: [] } });
+          const result = await mcp.disconnect();
+          panel?.webview.postMessage({ type: 'mcpStatus', payload: { connected: false, message: result, tools: [] } });
+          output.appendLine(result);
           break;
         }
         case 'runWorkflow': {
           const name = message.payload?.name as string;
-          const state = resolveState(this.repo);
+          const state = resolveState(repo);
           const selected = state.workflows.find((it) => it.name === name);
           if (!selected) {
-            this.view?.webview.postMessage({ type: 'runResult', payload: { output: '未找到工作流', logs: [] } });
+            panel?.webview.postMessage({ type: 'runResult', payload: { output: '未找到工作流', logs: [] } });
+            output.appendLine('运行失败: 未找到工作流');
             return;
           }
 
-          const output = JSON.stringify(buildMockOutput(selected), null, 2);
-          this.view?.webview.postMessage({
+          const logs = [
+            `[${new Date().toLocaleTimeString()}] 开始运行: ${selected.name}`,
+            `[${new Date().toLocaleTimeString()}] 节点数: ${selected.definition.nodes.length}`,
+            `[${new Date().toLocaleTimeString()}] 运行完成`
+          ];
+          const outputText = JSON.stringify(buildMockOutput(selected), null, 2);
+
+          panel?.webview.postMessage({
             type: 'runResult',
             payload: {
-              output,
-              logs: [
-                `[${new Date().toLocaleTimeString()}] 开始运行: ${selected.name}`,
-                `[${new Date().toLocaleTimeString()}] 节点数: ${selected.definition.nodes.length}`,
-                `[${new Date().toLocaleTimeString()}] 运行完成`
-              ]
+              output: outputText,
+              logs
             }
           });
+
+          logs.forEach((line) => output.appendLine(line));
           break;
         }
-        case 'openChat':
+        case 'openChat': {
           await vscode.commands.executeCommand('workbench.action.chat.open');
           break;
+        }
       }
     });
 
-    this.pushState();
-  }
-
-  public async reveal(): Promise<void> {
-    await vscode.commands.executeCommand(`${WORKBENCH_VIEW_ID}.focus`);
-    this.pushState();
-  }
-
-  public requestRefresh(): void {
-    this.view?.webview.postMessage({ type: 'requestRefresh' });
-  }
-
-  private pushState(): void {
-    const state = resolveState(this.repo);
-    this.view?.webview.postMessage({
-      type: 'state',
-      payload: {
-        ...state,
-        mcpConnected: this.mcp.isConnected()
-      }
+    panel.onDidDispose(() => {
+      panel = undefined;
+      output.appendLine('Agent Workflow 工作台已关闭');
     });
-  }
-}
 
-export function activate(context: vscode.ExtensionContext): void {
-  const provider = new AgentWorkflowViewProvider(new WorkflowRepository(), new McpClientBridge());
+    pushState();
+  });
 
-  context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(WORKBENCH_VIEW_ID, provider, {
-      webviewOptions: { retainContextWhenHidden: true }
-    }),
-    vscode.commands.registerCommand('agentWorkflow.openWorkbench', async () => {
-      await provider.reveal();
-    }),
-    vscode.commands.registerCommand('agentWorkflow.refreshWorkflows', () => {
-      provider.requestRefresh();
-    })
-  );
+  const refreshDisposable = vscode.commands.registerCommand('agentWorkflow.refreshWorkflows', () => {
+    if (panel) {
+      panel.webview.postMessage({ type: 'requestRefresh' });
+      output.appendLine('触发工作台刷新');
+      return;
+    }
+    vscode.window.showInformationMessage('请先打开 Agent Workflow 工作台');
+  });
+
+  context.subscriptions.push(openDisposable, refreshDisposable, output);
 }
 
 function resolveState(repo: WorkflowRepository): { workflowRoot: string; workflows: WorkflowEntry[] } {
@@ -188,12 +203,11 @@ textarea{width:100%;height:150px;background:var(--vscode-input-background);color
 <body>
   <h3 style="margin:0 0 8px 0;">工作流可视化</h3>
   <div class="toolbar">
-    <button id="pickRoot">选择工作流目录</button>
-    <label>工作流</label>
+    <button id="pickRoot">工作流文件夹</button>
+    <label>工作流选择</label>
     <select id="workflowSelect" style="min-width:280px;"></select>
+    <button id="mcpBtn">启用/关闭mcp</button>
     <button id="refreshBtn">刷新</button>
-    <button id="mcpBtn">关闭MCP</button>
-    <button id="chatBtn">展开对话</button>
   </div>
   <div class="main">
     <div class="canvas-wrap"><div class="canvas" id="canvas"></div></div>
@@ -206,7 +220,9 @@ textarea{width:100%;height:150px;background:var(--vscode-input-background);color
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
-    <button id="runBtn">▶ 运行</button>
+    <span>工作流输入</span>
+    <button id="runBtn">▶ 工作流运行</button>
+    <button id="chatBtn">展开对话</button>
     <span id="runningName"></span>
   </div>
   <div class="bottom">
@@ -326,7 +342,7 @@ window.addEventListener('message', (event) => {
     state.workflows = msg.payload.workflows || [];
     state.mcpConnected = Boolean(msg.payload.mcpConnected);
     state.selected = state.workflows[0] || null;
-    mcpBtn.textContent = state.mcpConnected ? '关闭MCP' : '启用MCP';
+    mcpBtn.textContent = state.mcpConnected ? '关闭mcp' : '启用mcp';
     renderSelect();
     renderCanvas();
   }
@@ -337,7 +353,7 @@ window.addEventListener('message', (event) => {
   }
   if (msg.type === 'mcpStatus') {
     state.mcpConnected = Boolean(msg.payload.connected);
-    mcpBtn.textContent = state.mcpConnected ? '关闭MCP' : '启用MCP';
+    mcpBtn.textContent = state.mcpConnected ? '关闭mcp' : '启用mcp';
     document.getElementById('mcpStatus').textContent = msg.payload.message;
     document.getElementById('mcpTools').textContent = (msg.payload.tools || []).length ? 'Tools:\n' + msg.payload.tools.join('\n') : '';
   }

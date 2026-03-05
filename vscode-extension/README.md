@@ -22,15 +22,13 @@ npm run compile
 `Agent Workflow: 打开工作台`
 
 
-## 在左/右侧边栏启用
+## 打开后界面布局（接近 IDE 右侧工作区效果）
 
-安装后会在 Activity Bar 出现 **Agent Workflow** 图标：
+安装并启用后，执行命令 `Agent Workflow: 打开工作台`，插件会：
 
-1. 点击左侧（或右侧）活动栏的 **Agent Workflow** 图标
-2. 打开视图 **工作流可视化** 即可使用
-3. 也可通过命令面板执行 `Agent Workflow: 打开工作台` 来聚焦该侧边栏视图
-
-> 如果你把 Activity Bar 放在右侧，插件会随 VS Code 布局显示在右边栏。
+1. 在编辑区右侧打开 `Agent Workflow` 工作台（`ViewColumn.Beside`）
+2. 自动显示底部 Output 面板并使用 `agent workflow` 频道输出运行日志
+3. 工作台内部为：顶部工具栏 + 中部画布/节点配置 + 底部输入输出日志区域
 
 ## 打包成可安装 VSIX
 
