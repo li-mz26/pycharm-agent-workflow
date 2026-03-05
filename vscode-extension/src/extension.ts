@@ -175,12 +175,13 @@ function getWebviewHtml(): string {
 <meta name="viewport" content="width=device-width,initial-scale=1.0" />
 <title>Agent Workflow</title>
 <style>
-body{font-family:var(--vscode-font-family);margin:0;padding:12px;color:var(--vscode-foreground)}
+html,body{height:100%}
+body{font-family:var(--vscode-font-family);margin:0;padding:10px;box-sizing:border-box;color:var(--vscode-foreground);display:flex;flex-direction:column;overflow:hidden}
 .toolbar{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 select,button{height:28px}
-.main{display:grid;grid-template-columns:2fr 1fr;gap:8px;height:62vh}
-.canvas-wrap{border:1px solid var(--vscode-panel-border);position:relative;overflow:auto;background:var(--vscode-editor-background)}
-.canvas{position:relative;min-width:900px;min-height:680px}
+.main{display:grid;grid-template-columns:2fr 1fr;gap:8px;flex:1;min-height:0}
+.canvas-wrap{border:1px solid var(--vscode-panel-border);position:relative;overflow:auto;background:var(--vscode-editor-background);min-height:0}
+.canvas{position:relative;min-width:900px;min-height:100%}
 .node{position:absolute;min-width:90px;padding:8px 12px;border-radius:8px;color:#fff;font-weight:700;box-shadow:0 2px 4px rgba(0,0,0,.2)}
 .node small{display:block;opacity:.85;margin-top:4px}
 .node.start{background:linear-gradient(90deg,#2e7d32,#66bb6a)}
@@ -190,14 +191,14 @@ select,button{height:28px}
 .node.condition,.node.branch{background:linear-gradient(90deg,#ef6c00,#ffca28)}
 .node.http,.node.variable{background:linear-gradient(90deg,#006064,#26c6da)}
 .edge-layer{position:absolute;left:0;top:0;pointer-events:none}
-.panel{border:1px solid var(--vscode-panel-border);padding:8px;overflow:auto}
-.bottom{margin-top:8px;border:1px solid var(--vscode-panel-border)}
+.panel{border:1px solid var(--vscode-panel-border);padding:8px;overflow:auto;min-height:0}
+.bottom{margin-top:8px;border:1px solid var(--vscode-panel-border);height:220px;display:flex;flex-direction:column;min-height:0;flex-shrink:0}
 .tabs{display:flex;gap:12px;border-bottom:1px solid var(--vscode-panel-border);padding:6px 8px}
 .tab{cursor:pointer}
 .tab.active{color:var(--vscode-textLink-foreground);font-weight:700}
-.tab-content{padding:8px;height:170px;overflow:auto}
+.tab-content{padding:8px;flex:1;min-height:0;overflow:auto}
 pre{margin:0;white-space:pre-wrap;word-break:break-word}
-textarea{width:100%;height:150px;background:var(--vscode-input-background);color:var(--vscode-input-foreground)}
+textarea{width:100%;height:100%;box-sizing:border-box;background:var(--vscode-input-background);color:var(--vscode-input-foreground)}
 </style>
 </head>
 <body>
