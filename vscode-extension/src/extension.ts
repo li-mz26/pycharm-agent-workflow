@@ -2,11 +2,13 @@ import * as vscode from 'vscode';
 import { WorkflowRepository } from './workflowRepository';
 import { WorkflowEntry } from './types';
 import { McpClientBridge } from './mcpClient';
+import { WorkflowRuntime } from './workflowRuntime';
 
 export function activate(context: vscode.ExtensionContext): void {
   const repo = new WorkflowRepository();
   const mcp = new McpClientBridge();
   const output = vscode.window.createOutputChannel('agent workflow');
+  const runtime = new WorkflowRuntime();
 
   let panel: vscode.WebviewPanel | undefined;
 
@@ -92,6 +94,7 @@ export function activate(context: vscode.ExtensionContext): void {
         }
         case 'runWorkflow': {
           const name = message.payload?.name as string;
+          const rawInput = message.payload?.input as string | undefined;
           const state = resolveState(repo);
           const selected = state.workflows.find((it) => it.name === name);
           if (!selected) {
@@ -100,22 +103,35 @@ export function activate(context: vscode.ExtensionContext): void {
             return;
           }
 
-          const logs = [
-            `[${new Date().toLocaleTimeString()}] 开始运行: ${selected.name}`,
-            `[${new Date().toLocaleTimeString()}] 节点数: ${selected.definition.nodes.length}`,
-            `[${new Date().toLocaleTimeString()}] 运行完成`
-          ];
-          const outputText = JSON.stringify(buildMockOutput(selected), null, 2);
+          let initialInput: Record<string, unknown> = {};
+          try {
+            if (rawInput?.trim()) {
+              const parsed = JSON.parse(rawInput) as unknown;
+              if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                initialInput = parsed as Record<string, unknown>;
+              }
+            }
+          } catch {
+            panel?.webview.postMessage({
+              type: 'runResult',
+              payload: {
+                output: '输入 JSON 格式错误',
+                logs: ['请输入合法 JSON 对象，例如 {"raw_data": []}']
+              }
+            });
+            output.appendLine('运行失败: 输入 JSON 格式错误');
+            return;
+          }
 
+          const result = await runtime.runWorkflow(selected, initialInput);
           panel?.webview.postMessage({
             type: 'runResult',
             payload: {
-              output: outputText,
-              logs
+              output: JSON.stringify(result.finalOutput, null, 2),
+              logs: result.logs
             }
           });
-
-          logs.forEach((line) => output.appendLine(line));
+          result.logs.forEach((line) => output.appendLine(line));
           break;
         }
         case 'openChat': {
@@ -153,16 +169,6 @@ function resolveState(repo: WorkflowRepository): { workflowRoot: string; workflo
   }
   const workflows = repo.loadAll(workspaceFolder.uri.fsPath, workflowRoot);
   return { workflowRoot, workflows };
-}
-
-function buildMockOutput(workflow: WorkflowEntry): Record<string, unknown> {
-  return {
-    workflow: workflow.name,
-    raw_data: [],
-    cleaned_data: [],
-    summary: 'sample_summary',
-    message: 'sample_message'
-  };
 }
 
 function getWebviewHtml(): string {
@@ -250,7 +256,7 @@ document.getElementById('refreshBtn').onclick = () => post('refresh');
 document.getElementById('pickRoot').onclick = () => post('pickWorkflowRoot');
 document.getElementById('chatBtn').onclick = () => post('openChat');
 document.getElementById('runBtn').onclick = () => {
-  if(state.selected){ post('runWorkflow', { name: state.selected.name }); }
+  if(state.selected){ post('runWorkflow', { name: state.selected.name, input: document.getElementById('inputBox').value }); }
 };
 mcpBtn.onclick = () => post(state.mcpConnected ? 'disconnectMcp' : 'connectMcp');
 

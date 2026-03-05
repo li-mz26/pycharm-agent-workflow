@@ -5,7 +5,8 @@
 - 工作流目录选择 + 自动扫描 `workflow.json`
 - DAG 画布可视化（节点/连线/分支标签）
 - 节点配置面板
-- 输入/输出/日志页签与“运行”模拟结果
+- 输入/输出/日志页签与工作流实际运行结果
+- 运行引擎支持 DAG 拓扑执行、条件/分支路由、Python code 节点、HTTP 节点、variable 节点、agent 节点
 - MCP 开关（基于 `@modelcontextprotocol/sdk` 的 streamable HTTP client）
 - 快速打开 VS Code Chat（展开对话）
 
