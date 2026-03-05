@@ -63,6 +63,15 @@ npm run compile
 
 然后在 VS Code 里按 `F5` 启动 Extension Development Host，执行命令 `Agent Workflow: 打开工作台`。
 
+如需生成可安装包（VSIX）：
+
+```bash
+cd vscode-extension
+npm install
+npm run package
+```
+
+
 ## 开发
 
 ```bash

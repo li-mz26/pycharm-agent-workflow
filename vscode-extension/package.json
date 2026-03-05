@@ -44,12 +44,16 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "lint": "eslint src --ext ts"
+    "lint": "eslint src --ext ts",
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package --no-dependencies",
+    "package:out": "vsce package --no-dependencies --out ../dist/agent-workflow-vscode.vsix"
   },
   "devDependencies": {
     "@types/node": "^20.12.12",
     "@types/vscode": "^1.90.0",
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "@vscode/vsce": "^3.6.2"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.4"

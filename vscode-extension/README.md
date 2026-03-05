@@ -9,7 +9,7 @@
 - MCP 开关（基于 `@modelcontextprotocol/sdk` 的 streamable HTTP client）
 - 快速打开 VS Code Chat（展开对话）
 
-## 启动
+## 启动开发
 
 ```bash
 cd vscode-extension
@@ -20,6 +20,43 @@ npm run compile
 按 F5 启动 Extension Development Host，执行命令：
 
 `Agent Workflow: 打开工作台`
+
+## 打包成可安装 VSIX
+
+```bash
+cd vscode-extension
+npm install
+npm run package
+```
+
+默认会在 `vscode-extension/` 目录下生成类似：
+
+- `agent-workflow-vscode-0.0.1.vsix`
+
+如果想固定输出到仓库根目录 `dist/`：
+
+```bash
+mkdir -p ../dist
+npm run package:out
+```
+
+生成文件：
+
+- `dist/agent-workflow-vscode.vsix`
+
+### 安装 VSIX
+
+在 VS Code 中：
+
+1. 打开扩展视图（`Ctrl/Cmd + Shift + X`）
+2. 右上角 `...` → `Install from VSIX...`
+3. 选择上一步打包得到的 `.vsix`
+
+或者命令行安装：
+
+```bash
+code --install-extension dist/agent-workflow-vscode.vsix
+```
 
 ## 配置项
 
