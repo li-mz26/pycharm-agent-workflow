@@ -1,7 +1,7 @@
 {
   "id": "example_workflow_001",
   "name": "示例数据处理工作流",
-  "description": "读取数据、清洗、分析的工作流（代码分离版本）",
+  "description": "读取数据、清洗、分析的工作流（branch 稳定版本）",
   "nodes": [
     {
       "id": "start_001",
@@ -20,16 +20,21 @@
       "config": {
         "codeFile": "nodes/code_001.py",
         "inputs": {"raw_data": "start_001.raw_data"},
-        "outputs": {"cleaned_data": "list"}
+        "outputs": {"cleaned_data": "list", "has_data": "boolean"}
       }
     },
     {
-      "id": "condition_001",
-      "type": "condition",
+      "id": "branch_001",
+      "type": "branch",
       "name": "数据量检查",
       "position": {"x": 500, "y": 100},
       "config": {
-        "condition": "len(cleaned_data) > 0"
+        "branchField": "has_data",
+        "branchCases": {
+          "true": "agent_001",
+          "false": "code_002"
+        },
+        "defaultTarget": "code_002"
       }
     },
     {
@@ -64,15 +69,16 @@
   ],
   "edges": [
     {"id": "edge_001", "source": "start_001", "target": "code_001"},
-    {"id": "edge_002", "source": "code_001", "target": "condition_001"},
-    {"id": "edge_003", "source": "condition_001", "target": "agent_001", "condition": "有数据"},
-    {"id": "edge_004", "source": "condition_001", "target": "code_002", "condition": "无数据"},
+    {"id": "edge_002", "source": "code_001", "target": "branch_001"},
+    {"id": "edge_003", "source": "branch_001", "target": "agent_001", "condition": "true"},
+    {"id": "edge_004", "source": "branch_001", "target": "code_002", "condition": "false"},
     {"id": "edge_005", "source": "agent_001", "target": "end_001"},
     {"id": "edge_006", "source": "code_002", "target": "end_001"}
   ],
   "variables": {
     "raw_data": {"type": "list"},
     "cleaned_data": {"type": "list"},
+    "has_data": {"type": "boolean"},
     "summary": {"type": "string"},
     "message": {"type": "string"}
   }

@@ -30,6 +30,7 @@ examples/
 
 - **code 节点**: 代码存储在 `nodes/{node_id}.py`，JSON 中使用 `codeFile` 引用
 - **agent 节点**: 提示词存储在 `nodes/{node_id}_prompt.md`，JSON 中使用 `promptFile` 引用
+- **branch 节点**: 使用 `branchField` 读取输入变量（如 `has_data`），通过 `branchCases` 映射到目标节点
 
 ### 示例代码片段
 
@@ -38,7 +39,7 @@ examples/
 def main(inputs):
     data = inputs.get('raw_data', [])
     cleaned = [x for x in data if x is not None]
-    return {'cleaned_data': cleaned}
+    return {'cleaned_data': cleaned, 'has_data': len(cleaned) > 0}
 ```
 
 **nodes/agent_001_prompt.md** (数据分析提示词):
